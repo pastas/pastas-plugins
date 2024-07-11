@@ -1,3 +1,5 @@
+.. _Developers:
+
 Developers
 ==========
 
