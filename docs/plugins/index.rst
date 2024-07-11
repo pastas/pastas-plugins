@@ -9,4 +9,6 @@ below to read more about each plugin.
    :maxdepth: 1
    :caption: Plugins:
 
+   Modflow <modflow>
+   Reservoirs <reservoirs>
    Responses <responses>
