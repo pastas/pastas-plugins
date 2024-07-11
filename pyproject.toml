@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=64.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pastas-plugins"
+dynamic = ["version"]
+description = "Repository containing plugins to further enhance your pastas experience."
+license = { file = "LICENSE" }
+readme = "README.md"
+authors = [{ name = "Pastas Developers Team" }]
+maintainers = [
+    { name = "D.A. Brakenhoff", email = "d.brakenhoff@artesia-water.nl" },
+    { name = "M.A. Vonk", email = "m.vonk@artesia-water.nl" },
+    { name = "M. Bakker", email = "markbak@gmail.com" },
+]
+
+requires-python = ">= 3.9"
+dependencies = ["pastas"]
+keywords = ["hydrology", "groundwater", "timeseries", "analysis"]
+classifiers = [
+    'Development Status :: 3 - Alpha',
+    'Intended Audience :: Science/Research',
+    'Intended Audience :: Other Audience',
+    'License :: OSI Approved :: MIT License',
+    'Programming Language :: Python :: 3 :: Only',
+    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Topic :: Scientific/Engineering :: Hydrology',
+]
+
+[project.urls]
+homepage = "https://pastas.dev"
+repository = "https://github.com/pastas/pastas-plugins"
+documentation = "https://pastas.readthedocs.io"
+
+[project.optional-dependencies]
+modflow = ["flopy"]
+
+[tool.setuptools.dynamic]
+version = { attr = "pastas_plugins.version.__version__" }
