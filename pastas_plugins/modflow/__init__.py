@@ -1,0 +1,1 @@
+from pastas_plugins.modflow.version import __version__
