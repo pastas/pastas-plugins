@@ -62,28 +62,28 @@ legacy_tox_ini = """
     env_list = py{39,310,311,312}
 
     [testenv:all]
-    description = run all unit tests (including Notebooks) and obtain coverage
+    description = run all unit tests and obtain coverage
     basepython = python3.10
-    extras = ci,all
+    extras = ci,pytesting,all
     commands =
             coverage run -m pytest tests
             coverage xml
 
     [testenv:modflow]
     description = run all unit tests for modflow plugin
-    extras = ci,modflow
+    extras = pytesting,modflow
     commands =
             pytest tests/test_modflow.py
 
     [testenv:responses]
     description = run all unit tests for responses plugin
-    extras = ci,responses
+    extras = pytesting,responses
     commands =
             pytest tests/test_responses.py
 
     [testenv:reservoirs]
     description = run all unit tests for reservoirs plugin
-    extras = ci,reservoirs
+    extras = pytesting,reservoirs
     commands =
             pytest tests/test_reservoirs.py
 

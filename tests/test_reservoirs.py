@@ -1,2 +1,2 @@
-def test_reservois_dummy():
+def test_reservoirs_dummy():
     assert 0 == 0
