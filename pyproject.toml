@@ -3,7 +3,7 @@ requires = ["setuptools>=64.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pastas-plugins"
+name = "pastas_plugins"
 dynamic = ["version"]
 description = "Repository containing plugins to further enhance your pastas experience."
 license = { file = "LICENSE" }
@@ -37,7 +37,62 @@ repository = "https://github.com/pastas/pastas-plugins"
 documentation = "https://pastas.readthedocs.io"
 
 [project.optional-dependencies]
+all = ["pastas_plugins[modflow]"]
 modflow = ["flopy"]
+reservoirs = ["pastas_plugins"]
+responses = ["pastas_plugins"]
+ruffing = ["ruff"]
+pytesting = ["pytest>=7", "pytest-cov", "pytest-sugar"]
+ci = ["coverage"]
 
 [tool.setuptools.dynamic]
 version = { attr = "pastas_plugins.version.__version__" }
+
+[tool.tox]
+legacy_tox_ini = """
+    [tox]
+    requires = tox>=4
+    env_list = py{39,310,311,312}
+
+    [testenv:all]
+    description = run all unit tests (including Notebooks) and obtain coverage
+    basepython = python3.10
+    extras = ci,all
+    commands =
+            coverage run -m pytest tests
+            coverage xml
+
+    [testenv:modflow]
+    description = run all unit tests for modflow plugin
+    extras = ci,modflow
+    commands =
+            pytest tests/test_modflow.py
+
+    [testenv:responses]
+    description = run all unit tests for responses plugin
+    extras = ci,responses
+    commands =
+            pytest tests/test_responses.py
+
+    [testenv:reservoirs]
+    description = run all unit tests for reservoirs plugin
+    extras = ci,reservoirs
+    commands =
+            pytest tests/test_reservoirs.py
+
+    [testenv:ruff]
+    description = run ruff checks
+    basepython = python3.10
+    extras = ruffing
+    commands =
+            ruff check --extend-select I --preview
+            ruff format --check
+
+    [testenv:ruff_fix]
+    description = run ruff locally and fix issues
+    extras = ruffing
+    commands =
+            ruff check --extend-select I --fix
+            ruff format
+
+"""
