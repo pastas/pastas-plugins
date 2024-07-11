@@ -14,9 +14,11 @@ To be added
 
 import numpy as np
 from numpy import float64
+
 # from scipy.integrate import solve_ivp # only used in simulateold
 from pandas import DataFrame
 from pastas.decorators import njit
+
 
 class ReservoirBase:
     """Base class for reservoir classes."""
@@ -39,8 +41,7 @@ class ReservoirBase:
         parameters: pandas.DataFrame
             Pandas DataFrame with the parameters.
         """
-        parameters = DataFrame(
-            columns=["initial", "pmin", "pmax", "vary", "name"])
+        parameters = DataFrame(columns=["initial", "pmin", "pmax", "vary", "name"])
         return parameters
 
     def simulate(self, prec, evap, p, dt=1.0, **kwargs):
@@ -58,6 +59,7 @@ class Reservoir1(ReservoirBase):
     ----------
     None
     """
+
     _name = "Reservoir1"
 
     def __init__(self, initialhead):
@@ -66,13 +68,11 @@ class Reservoir1(ReservoirBase):
         self.initialhead = initialhead
 
     def get_init_parameters(self, name="reservoir"):
-        parameters = DataFrame(
-            columns=["initial", "pmin", "pmax", "vary", "name"])
+        parameters = DataFrame(columns=["initial", "pmin", "pmax", "vary", "name"])
         parameters.loc[name + "_S"] = (0.1, 0.001, 1, True, name)
         parameters.loc[name + "_c"] = (100, 1, 5000, True, name)
         dmean = self.initialhead
-        parameters.loc[name + "_d"] = (dmean, dmean - 10,
-                                       dmean + 10, True, name)
+        parameters.loc[name + "_d"] = (dmean, dmean - 10, dmean + 10, True, name)
         parameters.loc[name + "_f"] = (-1.0, -2.0, 0.0, True, name)
         return parameters
 
@@ -108,6 +108,7 @@ class Reservoir1(ReservoirBase):
             h[i] = h[i - 1] + delt * (rech / S - (h[i - 1] - d) / (c * S))
         return h[1:]
 
+
 #     def simulateold(self, prec, evap, p, **kwargs):
 #         """Implementation using solve_ivp - too slow and
 
@@ -142,6 +143,7 @@ class Reservoir1(ReservoirBase):
 #         #rv += -expit(100 * (h[0] - 19.6)) * (h[0] - 19.6) / 20
 #         return rv
 
+
 class Reservoir2(ReservoirBase):
     """Single reservoir with outflow at two heights
 
@@ -153,6 +155,7 @@ class Reservoir2(ReservoirBase):
     ----------
     None
     """
+
     _name = "Reservoir2"
 
     def __init__(self, initialhead):
@@ -161,13 +164,11 @@ class Reservoir2(ReservoirBase):
         self.initialhead = initialhead
 
     def get_init_parameters(self, name="reservoir"):
-        parameters = DataFrame(
-            columns=["initial", "pmin", "pmax", "vary", "name"])
+        parameters = DataFrame(columns=["initial", "pmin", "pmax", "vary", "name"])
         parameters.loc[name + "_S"] = (0.1, 0.001, 1, True, name)
         parameters.loc[name + "_c"] = (100, 1, 5000, True, name)
         dmean = self.initialhead
-        parameters.loc[name + "_d"] = (dmean, dmean - 10,
-                                       dmean + 10, True, name)
+        parameters.loc[name + "_d"] = (dmean, dmean - 10, dmean + 10, True, name)
         parameters.loc[name + "_f"] = (-1.0, -2.0, 0.0, True, name)
         parameters.loc[name + "_c2"] = (100, 1, 1000, True, name)
         parameters.loc[name + "_deld"] = (0.01, 0.001, 10, True, name)

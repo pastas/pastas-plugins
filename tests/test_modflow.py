@@ -1,3 +1,2 @@
-
 def test_modflow_dummy():
-    assert 0==0
+    assert 0 == 0

@@ -1,6 +1,6 @@
+from pandas import Series
 from pastas.stressmodels import StressModelBase
 from pastas.timseries import TimeSeries
-from pandas import Series
 
 
 class ReservoirModel(StressModelBase):
@@ -33,27 +33,35 @@ class ReservoirModel(StressModelBase):
     --------
     pastas.timeseries
     """
+
     _name = "ReservoirModel"
 
-    def __init__(self, stress, reservoir, name, meanhead,
-                 settings=("prec", "evap"), metadata=(None, None),
-                 meanstress=None):
+    def __init__(
+        self,
+        stress,
+        reservoir,
+        name,
+        meanhead,
+        settings=("prec", "evap"),
+        metadata=(None, None),
+        meanstress=None,
+    ):
         # Set resevoir object
         self.reservoir = reservoir(meanhead)
 
         # Code below is copied from StressModel2 and may not be optimal
         # Check the series, then determine tmin and tmax
-        stress0 = TimeSeries(stress[0], settings=settings[0],
-                             metadata=metadata[0])
-        stress1 = TimeSeries(stress[1], settings=settings[1],
-                             metadata=metadata[1])
+        stress0 = TimeSeries(stress[0], settings=settings[0], metadata=metadata[0])
+        stress1 = TimeSeries(stress[1], settings=settings[1], metadata=metadata[1])
 
         # Select indices from validated stress where both series are available.
         index = stress0.series.index.intersection(stress1.series.index)
         if index.empty:
-            msg = ('The two stresses that were provided have no '
-                   'overlapping time indices. Please make sure the '
-                   'indices of the time series overlap.')
+            msg = (
+                "The two stresses that were provided have no "
+                "overlapping time indices. Please make sure the "
+                "indices of the time series overlap."
+            )
             # logger.error(msg)
             raise Exception(msg)
 
@@ -64,8 +72,9 @@ class ReservoirModel(StressModelBase):
         if meanstress is None:
             meanstress = (stress0.series - stress1.series).std()
 
-        StressModelBase.__init__(self, name=name, tmin=index.min(),
-                                 tmax=index.max(), rfunc=None)
+        StressModelBase.__init__(
+            self, name=name, tmin=index.min(), tmax=index.max(), rfunc=None
+        )
         self.stress.append(stress0)
         self.stress.append(stress1)
 
@@ -95,12 +104,15 @@ class ReservoirModel(StressModelBase):
         """
 
         stress = self.get_stress(tmin=tmin, tmax=tmax, freq=freq)
-        h = Series(data=self.reservoir.simulate(stress[0], stress[1], p),
-                   index=stress[0].index, name=self.name, fastpath=True)
+        h = Series(
+            data=self.reservoir.simulate(stress[0], stress[1], p),
+            index=stress[0].index,
+            name=self.name,
+            fastpath=True,
+        )
         return h
 
-    def get_stress(self, p=None, tmin=None, tmax=None, freq=None,
-                   istress=0, **kwargs):
+    def get_stress(self, p=None, tmin=None, tmax=None, freq=None, istress=0, **kwargs):
         if tmin is None:
             tmin = self.tmin
         if tmax is None:
