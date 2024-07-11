@@ -44,7 +44,13 @@ responses = ["pastas_plugins"]
 ruffing = ["ruff"]
 pytesting = ["pytest>=7", "pytest-cov", "pytest-sugar"]
 ci = ["coverage"]
-rtd = ["pastas_plugins[all]", "sphinx_rtd_theme", "myst_nb", "numpydoc"]
+rtd = [
+        "pastas_plugins[all]",
+        "sphinx_rtd_theme",
+        "myst_nb",
+        "numpydoc",
+        "sphinx_design",
+]
 
 [tool.setuptools.dynamic]
 version = { attr = "pastas_plugins.version.__version__" }
