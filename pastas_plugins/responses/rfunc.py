@@ -118,6 +118,6 @@ class Theis(RfuncBase):
             "gain_scale_factor": self.gain_scale_factor,
             "cutoff": self.cutoff,
             # "kind": self.kind,
-            "t": self.t,
+            # "t": self.t,
         }
         return data
