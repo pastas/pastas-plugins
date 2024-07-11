@@ -8,8 +8,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath("."))
-from pastas_plugins import __version__
-from pastas_plugins import responses
+from pastas_plugins import __version__, responses
 
 # The short X.Y version
 version = __version__

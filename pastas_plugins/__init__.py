@@ -1,9 +1,9 @@
 # ruff : noqa: F401
-import os
 import pathlib
-from importlib import import_module, metadata
-from platform import python_version
-from packaging.version import parse as parse_version
+from importlib import import_module
+
+# from platform import python_version
+# from packaging.version import parse as parse_version
 from pastas_plugins.version import __version__
 
 
@@ -26,7 +26,7 @@ def show_plugin_versions():
         try:
             module = import_module(f"pastas_plugins.{plugin}.version")
             version = module.__version__
-        except ModuleNotFoundError as e:
+        except ModuleNotFoundError:
             showtip = True
             version = "not available (check dependencies)"
         msg += f"- {(plugin + ' version'):20s} : {version}\n"
