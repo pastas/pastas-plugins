@@ -1,2 +1,3 @@
 # pastas-plugins
-:hammer-and-wrench: Repository containing plugins to further enhance your pastas experience. 
+
+Welcome to the pastas-plugins repository, your one-stop-shop for customized cutting-edge additions to Pastas. 
