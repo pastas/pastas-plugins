@@ -104,12 +104,12 @@ class Theis(RfuncBase):
 
     def to_dict(self):
         """Method to export the response function to a dictionary.
-        
+
         Returns
         -------
         data: dict
             dictionary with all necessary information to reconstruct the rfunc object.
-        
+
         Notes
         -----
         The exported dictionary should exactly match the input arguments of __init__.
