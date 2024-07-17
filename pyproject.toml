@@ -37,7 +37,8 @@ repository = "https://github.com/pastas/pastas-plugins"
 documentation = "https://pastas.readthedocs.io"
 
 [project.optional-dependencies]
-all = ["pastas_plugins[modflow]"]
+all = ["pastas_plugins[modflow,crosscorrelation]"]
+crosscorrelation = ["statsmodels"]
 modflow = ["flopy"]
 reservoirs = ["pastas_plugins"]
 responses = ["pastas_plugins"]
@@ -68,6 +69,12 @@ legacy_tox_ini = """
     commands =
             coverage run -m pytest tests
             coverage xml
+
+    [testenv:crosscorrelation]
+    description = run all unit tests for crosscorrelation plugin
+    extras = pytesting,crosscorrelation
+    commands =
+            pytest tests/test_crosscorrelation.py
 
     [testenv:modflow]
     description = run all unit tests for modflow plugin
