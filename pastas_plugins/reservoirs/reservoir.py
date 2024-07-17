@@ -14,7 +14,6 @@ To be added
 
 import numpy as np
 from numpy import float64
-
 # from scipy.integrate import solve_ivp # only used in simulateold
 from pandas import DataFrame
 from pastas.decorators import njit

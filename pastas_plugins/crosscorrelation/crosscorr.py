@@ -7,7 +7,7 @@ from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.filters.filtertools import convolution_filter
 
 
-def ccf_equidistant(
+def ccf(
     x: pd.Series,
     y: pd.Series,
     nlags: int | None = None,

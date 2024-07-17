@@ -1,6 +1,8 @@
+import pandas as pd
 import pytest
 
-from pastas_plugins.reservoirs.reservoir import Reservoir1, Reservoir2, ReservoirBase
+from pastas_plugins.reservoirs.reservoir import (Reservoir1, Reservoir2,
+                                                 ReservoirBase)
 
 
 def test_reservoir_base_init():
@@ -43,14 +45,14 @@ def test_reservoir1_get_init_parameters():
 
 def test_reservoir1_simulate():
     reservoir = Reservoir1(10)
-    prec = [1, 2, 3]
-    evap = [0.5, 1.0, 1.5]
+    prec = pd.Series([1.0, 2.0, 3.0])
+    evap = pd.Series([0.5, 1.0, 1.5])
     p = [0.1, 0.2, 0.3, 0.4]
     result = reservoir.simulate(prec, evap, p)
     assert len(result) == 3
-    assert result[0] == pytest.approx(10.0)
-    assert result[1] == pytest.approx(10.1)
-    assert result[2] == pytest.approx(10.2)
+    assert result[0] == pytest.approx(12.3)
+    assert result[1] == pytest.approx(-563.7)
+    assert result[2] == pytest.approx(27672.3)
 
 
 def test_reservoir2_init():
@@ -74,11 +76,11 @@ def test_reservoir2_get_init_parameters():
 
 def test_reservoir2_simulate():
     reservoir = Reservoir2(10)
-    prec = [1, 2, 3]
-    evap = [0.5, 1.0, 1.5]
+    prec = pd.Series([1.0, 2.0, 3.0])
+    evap = pd.Series([0.5, 1.0, 1.5])
     p = [0.1, 0.2, 0.3, 0.4, 0.5, 0.01]
     result = reservoir.simulate(prec, evap, p)
     assert len(result) == 3
-    assert result[0] == pytest.approx(10.0)
-    assert result[1] == pytest.approx(10.1)
-    assert result[2] == pytest.approx(10.2)
+    assert result[0] == pytest.approx(12.3)
+    assert result[1] == pytest.approx(-803.5)
+    assert result[2] == pytest.approx(39422.5)

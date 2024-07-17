@@ -5,10 +5,10 @@ from pastas.timeseries import TimeSeries
 
 class ReservoirModel(StressModelBase):
     """Time series model consisting of a single reservoir with two stresses.
-    
+
     The first stress causes the head to go up and the second stress causes
     the head to go down.
-    
+
     Parameters
     ----------
     stress: list of pandas.Series or list of pastas.timeseries
@@ -25,14 +25,14 @@ class ReservoirModel(StressModelBase):
     metadata: list of dicts, optional
         dictionary containing metadata about the stress. This is passed onto
         the TimeSeries object.
-    
+
     Notes
     -----
     The order in which the stresses are provided is the order the metadata
     and settings dictionaries or string are passed onto the TimeSeries
     objects. By default, the precipitation stress is the first and the
     evaporation stress the second stress.
-    
+
     See Also
     --------
     pastas.timeseries
@@ -91,7 +91,7 @@ class ReservoirModel(StressModelBase):
 
     def simulate(self, p, tmin=None, tmax=None, freq=None, dt=1, istress=None):
         """Simulates the head contribution.
-        
+
         Parameters
         ----------
         p: array_like
@@ -102,7 +102,7 @@ class ReservoirModel(StressModelBase):
         freq: str, optional
         dt: float, time step
         istress: int, not used
-        
+
         Returns
         -------
         pandas.Series
@@ -130,7 +130,7 @@ class ReservoirModel(StressModelBase):
 
     def to_dict(self, series=True):
         """Method to export the StressModel object.
-        
+
         Returns
         -------
         data: dict
