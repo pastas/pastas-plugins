@@ -7,7 +7,7 @@ from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.filters.filtertools import convolution_filter
 
 
-def ccf(
+def ccf_equidistant(
     x: pd.Series,
     y: pd.Series,
     nlags: int | None = None,
@@ -38,6 +38,16 @@ def ccf(
     -------
     pandas Series or DataFrame
     """
+    # check if lengths are equal
+    assert len(x) == len(y), "Length of series x and y should be equal"
+    # check if series are equidistant
+    for series in (x, y):
+        if pd.infer_freq(series.index) is None:
+            msg = (
+                "The frequency of the index of time series %s could not be "
+                "inferred. Please provide a time series with a equidistant time step."
+            )
+            raise ValueError(msg % series.name)
 
     n = len(x)
 
@@ -73,8 +83,8 @@ def prewhiten(
 ) -> tuple:
     """Prewhiten time series using AR(ar) model.
 
-    An AR(X) model is fitted on time series x. The goal is to obtain residuals that
-    adhere to a white noise process. Next, the AR(X) model is applied to time series Y.
+    An AR(ar) model is fitted on time series x. The goal is to obtain residuals that
+    adhere to a white noise process. Next, the AR(ar) model is applied to time series Y.
 
     Note
     ----
@@ -130,8 +140,8 @@ def fit_response(
     scale_factor: float = 1.0,
     dt: float = 1.0,
 ) -> np.ndarray[float]:
-    """
-    Fit the response function to the cross-correlation function using least squares optimization.
+    """Fit the response function to the cross-correlation function using least
+    squares optimization.
 
     Parameters:
     -----------
@@ -152,7 +162,7 @@ def fit_response(
 
     """
 
-    def f(p):
+    def obj_func(p):
         """Objective function for least squares optimization."""
         impulse_response = (ccf * scale_factor).values
         blockr = rfunc.block(p, dt=dt, cutoff=rfunc.cutoff)
@@ -172,5 +182,5 @@ def fit_response(
         params["pmax"].fillna(np.inf).values,
     )
 
-    res = sc.optimize.least_squares(f, x0=pini, bounds=bounds)
+    res = sc.optimize.least_squares(obj_func, x0=pini, bounds=bounds)
     return res.x
