@@ -1,3 +1,5 @@
+from typing import Tuple, Union
+
 import numpy as np
 import pandas as pd
 import pastas as ps
@@ -10,10 +12,10 @@ from statsmodels.tsa.filters.filtertools import convolution_filter
 def ccf(
     x: pd.Series,
     y: pd.Series,
-    nlags: int | None = None,
+    nlags: Union[int, None] = None,
     adjusted: bool = True,
-    alpha: float | None = None,
-) -> pd.Series | pd.DataFrame:
+    alpha: Union[float, None] = None,
+) -> Union[pd.Series, pd.DataFrame]:
     """Cross-correlation of two time series.
 
     Parameters
@@ -79,8 +81,8 @@ def ccf(
 
 
 def prewhiten(
-    x: pd.Series, y: pd.Series | None = None, ar: int = 20, arima: bool = False
-) -> tuple:
+    x: pd.Series, y: Union[pd.Series, None] = None, ar: int = 20, arima: bool = False
+) -> Union[pd.Series, Tuple[pd.Series]]:
     """Prewhiten time series using AR(ar) model.
 
     An AR(ar) model is fitted on time series x. The goal is to obtain residuals that
