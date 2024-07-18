@@ -1,7 +1,8 @@
 import numpy as np
 import pandas as pd
-import pytest
 import pastas as ps
+import pytest
+
 import pastas_plugins.crosscorrelation.crosscorr as ppcc
 
 sdate = pd.Timestamp("2022-01-01")
@@ -14,9 +15,10 @@ y = pd.Series(
     index=pd.date_range(start=sdate, periods=6, freq="D"),
 )
 cc = np.array([1.0, 0.6, 0.08571429, -0.54285714, -1.28571429, -2.14285714])
-gpar = np.array([3., 1.2, 5.0])
+gpar = np.array([3.0, 1.2, 5.0])
 rfunc = ps.Gamma()
 ccf = pd.Series(ps.Gamma().block(gpar))
+
 
 def test_ccf():
     nlags = 3
@@ -86,17 +88,20 @@ def test_fit_response():
     assert isinstance(params, np.ndarray)
     assert len(params) == len(rfunc.get_init_parameters(rfunc._name)["initial"])
 
+
 def test_fit_response_scale_factor():
     scale_factor = 2.0
     params = ppcc.fit_response(ccf, rfunc, scale_factor=scale_factor)
     assert isinstance(params, np.ndarray)
     assert len(params) == len(rfunc.get_init_parameters(rfunc._name)["initial"])
 
+
 def test_fit_response_dt():
     dt = 0.5
     params = ppcc.fit_response(ccf, rfunc, dt=dt)
     assert isinstance(params, np.ndarray)
     assert len(params) == len(rfunc.get_init_parameters(rfunc._name)["initial"])
+
 
 def test_fit_response_scale_factor_dt():
     scale_factor = 2.0
