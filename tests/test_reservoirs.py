@@ -1,8 +1,7 @@
 import pandas as pd
 import pytest
 
-from pastas_plugins.reservoirs.reservoir import (Reservoir1, Reservoir2,
-                                                 ReservoirBase)
+from pastas_plugins.reservoirs.reservoir import Reservoir1, Reservoir2, ReservoirBase
 
 
 def test_reservoir_base_init():
