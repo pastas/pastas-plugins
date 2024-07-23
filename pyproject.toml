@@ -40,8 +40,8 @@ documentation = "https://pastas.readthedocs.io"
 all = ["pastas_plugins[modflow,cross_correlation]"]
 cross_correlation = ["statsmodels"]
 modflow = ["flopy"]
-reservoirs = ["pastas_plugins"]
-responses = ["pastas_plugins"]
+reservoirs = ["pastas_plugins"] # placeholder for empty dependencies
+responses = ["pastas_plugins"] # placeholder for empty dependencies
 ruffing = ["ruff"]
 pytesting = ["pytest>=7", "pytest-cov", "pytest-sugar"]
 ci = ["coverage"]
