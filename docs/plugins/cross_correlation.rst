@@ -1,17 +1,17 @@
 .. _CrossCorrelation:
 
-Cross Correlation
+Cross-correlation
 -----------------
 
 .. role:: python(code)
    :language: python
 
-The cross-correlation plugin contains functions and visualizations to analyze the 
+The :code:`cross_correlation` plugin contains functions and visualizations to analyze the 
 cross-correlation between two time series.
 
 Currently the following functions are available:
 
-- :func:`~pastas_plugins.cross_correlation.crosscorr.ccf`: Compute the cross correlation function for two time series.
+- :func:`~pastas_plugins.cross_correlation.crosscorr.ccf`: Compute the cross-correlation function for two time series.
 - :func:`~pastas_plugins.cross_correlation.crosscorr.prewhiten`: Prewhiten time series using an autoregressive model.
 - :func:`~pastas_plugins.cross_correlation.crosscorr.fit_response`: Fit Pastas response function to the scaled cross-correlation function.
 
