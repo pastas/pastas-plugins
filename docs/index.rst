@@ -15,7 +15,7 @@ Current plugins
 ---------------
 The following plugins are currently available:
 
-- :ref:`Cross-correlation <cross_correlation>`: analyze and visualize the cross-correlation between two time series.
+- :ref:`Cross-correlation <CrossCorrelation>`: analyze and visualize the cross-correlation between two time series.
 - :ref:`Modflow <modflow>`: using a Modflow model as a response function in Pastas.
 - :ref:`Reservoirs <reservoirs>`: use reservoir models to simulate time series.
 - :ref:`Responses <responses>`: extra response functions for Pastas.
