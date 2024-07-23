@@ -3,7 +3,7 @@ import pandas as pd
 import pastas as ps
 import pytest
 
-import pastas_plugins.crosscorrelation.crosscorr as ppcc
+import pastas_plugins.cross_correlation.crosscorr as ppcc
 
 sdate = pd.Timestamp("2022-01-01")
 x = pd.Series(
