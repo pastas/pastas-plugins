@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from statsmodels.graphics.tsaplots import _plot_corr, plot_acf, plot_pacf
 
-from pastas_plugins.crosscorrelation.crosscorr import ccf
+from pastas_plugins.cross_correlation.crosscorr import ccf
 
 
 def plot_corr(

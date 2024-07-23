@@ -9,6 +9,7 @@ below to read more about each plugin.
    :maxdepth: 1
    :caption: Plugins:
 
+   Cross correlation <cross_correlation>
    Modflow <modflow>
    Reservoirs <reservoirs>
    Responses <responses>
