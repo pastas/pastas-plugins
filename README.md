@@ -8,6 +8,7 @@ cutting-edge additions to Pastas.
 
 The following plugins are now available:
 
+- **`cross_correlation`**: analyze and visualize the cross-correlation between two time series.
 - **`modflow`**: use modflow models as response functions.
 - **`reservoirs`**: use reservoir models to simulate time series.
 - **`responses`**: custom response functions for Pastas.
