@@ -23,9 +23,9 @@ Below you can find examples for the different plugins.
 
 .. rubric:: Modflow stressmodel
 
-`Using a Modflow model as a response function in Pastas`_
+`Using a Modflow model as a stressmodel in Pastas`_
 
-.. _Using a Modflow model as a response function in Pastas: modflow.html
+.. _Using a Modflow model as a stressmodel in Pastas: modflow.html
 
 
 .. rubric:: Cross-correlation
