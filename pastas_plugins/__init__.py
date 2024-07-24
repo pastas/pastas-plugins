@@ -21,7 +21,7 @@ def list_plugins():
 def show_plugin_versions():
     showtip = False
     plugins = list_plugins()
-    msg = f"pastas_plugins version : {__version__}\n"
+    msg = f"pastas_plugins version      : {__version__}\n"
     for plugin in plugins:
         try:
             module = import_module(f"pastas_plugins.{plugin}.version")
@@ -29,7 +29,7 @@ def show_plugin_versions():
         except ModuleNotFoundError:
             showtip = True
             version = "not available (check dependencies)"
-        msg += f"- {(plugin + ' version'):20s} : {version}\n"
-        if showtip:
-            msg += "\nNote: To install missing dependencies use `pip install pastas-plugins[<plugin-name>]`"
+        msg += f"- {(plugin + ' version'):25s} : {version}\n"
+    if showtip:
+        msg += "\nNote: To install missing dependencies use `pip install pastas-plugins[<plugin-name>]`"
     print(msg)

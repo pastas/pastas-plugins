@@ -9,6 +9,7 @@ Below you can find examples for the different plugins.
     :maxdepth: 2
     :hidden:
 
+    crosscorrelation_seriesJ
     responses
     modflow
 
@@ -26,3 +27,9 @@ Below you can find examples for the different plugins.
 
 .. _Using a Modflow model as a response function in Pastas: modflow.html
 
+
+.. rubric:: Cross-correlation
+
+`Benchmark problem Series J`_
+
+.. _Benchmark problem Series J: crosscorrelation_seriesJ.html

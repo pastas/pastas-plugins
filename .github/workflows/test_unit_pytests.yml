@@ -14,9 +14,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Test suite for modflow plugin with py39-ubuntu
-            python: "3.9"
-            toxenv: modflow
           - name: Test suite for modflow plugin with py310-ubuntu
             python: "3.10"
             toxenv: modflow
@@ -26,9 +23,6 @@ jobs:
           - name: Test suite for modflow plugin with py312-ubuntu
             python: "3.12"
             toxenv: modflow
-          - name: Test suite for responses plugin with py39-ubuntu
-            python: "3.9"
-            toxenv: responses
           - name: Test suite for responses plugin with py310-ubuntu
             python: "3.10"
             toxenv: responses
@@ -38,18 +32,24 @@ jobs:
           - name: Test suite for responses plugin with py312-ubuntu
             python: "3.12"
             toxenv: responses
-          - name: Test suite for reservoir plugin with py39-ubuntu
-            python: "3.9"
-            toxenv: reservoir
-          - name: Test suite for reservoir plugin with py310-ubuntu
+          - name: Test suite for reservoirs plugin with py310-ubuntu
             python: "3.10"
-            toxenv: reservoir
-          - name: Test suite for reservoir plugin with py311-ubuntu
+            toxenv: reservoirs
+          - name: Test suite for reservoirs plugin with py311-ubuntu
             python: "3.11"
-            toxenv: reservoir
-          - name: Test suite for reservoir plugin with py312-ubuntu
+            toxenv: reservoirs
+          - name: Test suite for reservoirs plugin with py312-ubuntu
             python: "3.12"
-            toxenv: reservoir
+            toxenv: reservoirs
+          - name: Test suite for cross_correlation plugin with py310-ubuntu
+            python: "3.10"
+            toxenv: cross_correlation
+          - name: Test suite for cross_correlation plugin with py311-ubuntu
+            python: "3.11"
+            toxenv: cross_correlation
+          - name: Test suite for cross_correlation plugin with py312-ubuntu
+            python: "3.12"
+            toxenv: cross_correlation
           - name: Test suite for all unit tests
             python: "3.10"
             toxenv: all
@@ -83,9 +83,9 @@ jobs:
       - name: Test
         run: tox -e ${{ matrix.toxenv }} --skip-pkg-install
 
-      - name: Run codacy-coverage-reporter
-        if: ${{ matrix.toxenv == 'all' && github.repository == 'pastas/pastas-plugins' && success() }}
-        uses: codacy/codacy-coverage-reporter-action@master
-        with:
-          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-          coverage-reports: coverage.xml
+      # - name: Run codacy-coverage-reporter
+      #   if: ${{ matrix.toxenv == 'all' && github.repository == 'pastas/pastas-plugins' && success() }}
+      #   uses: codacy/codacy-coverage-reporter-action@master
+      #   with:
+      #     project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+      #     coverage-reports: coverage.xml
