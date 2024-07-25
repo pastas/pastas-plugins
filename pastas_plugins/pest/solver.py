@@ -24,12 +24,13 @@ class PestSolver(BaseSolver):
         **kwargs,
     ) -> None:
         BaseSolver.__init__(self, pcov=pcov, nfev=nfev, **kwargs)
-        np.random.seed(pyemu.en.SEED)
-        self.temp_ws = Path(temp_ws)
+        # model workspace (for pastas files)
         self.model_ws = Path(model_ws)
         if not self.model_ws.exists():
             self.model_ws.mkdir(parents=True)
-        self.exe_name = Path(exe_name)
+        # template workspace (for pest files)
+        self.temp_ws = Path(temp_ws)
+        self.exe_name = Path(exe_name) # pest executable
         self.pf = pyemu.utils.PstFrom(
             original_d=self.model_ws, new_d=self.temp_ws, remove_existing=True
         )
