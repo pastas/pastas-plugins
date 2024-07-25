@@ -97,6 +97,10 @@ class PestSolver(BaseSolver):
         copy_file(self.exe_name, self.temp_ws)
         pyemu.os_utils.run(f"{self.exe_name.name} pest.pst", cwd=self.pf.new_d)
 
+    def obj_func(self, **kwargs) -> float:
+        """dummy objective function"""
+        return 0.0
+
 
 class PestGlmSolver(PestSolver):
     """PESTPP-GLM (Gauss-Levenberg-Marquardt) solver"""
