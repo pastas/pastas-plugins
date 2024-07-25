@@ -1,10 +1,13 @@
 import functools
 from typing import List, Protocol
+import logging
 
 import flopy
 import numpy as np
 from pandas import DataFrame, Series
 from pastas.typing import ArrayLike
+
+logger = logging.getLogger(__name__)
 
 
 class Modflow(Protocol):
@@ -18,7 +21,9 @@ class Modflow(Protocol):
 
 
 class ModflowRch:
-    def __init__(self, exe_name: str, sim_ws: str):
+    def __init__(
+        self, exe_name: str, sim_ws: str, raise_on_modflow_error: bool = False
+    ):
         self.exe_name = exe_name
         self.sim_ws = sim_ws
         self._name = "mf_rch"
@@ -30,6 +35,7 @@ class ModflowRch:
             "GHB",
             "RCH",
         )
+        self.raise_on_modflow_error = raise_on_modflow_error
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(columns=["initial", "pmin", "pmax", "vary", "name"])
@@ -161,7 +167,16 @@ class ModflowRch:
         if success:
             return self._gwf.output.head().get_ts((0, 0, 0))[:, 1]
         else:
-            raise Exception("Model run failed")
+            logger.error(
+                "ModflowError: model run failed with parameters: "
+                f"sy={p[0]}, c={p[1]}, f={p[2]}"
+            )
+            if self.raise_on_modflow_error:
+                raise Exception(
+                    "Modflow run failed. Check the LIST file for more information."
+                )
+            else:
+                return np.zeros(self._nper)
 
     def simulate(self, p: ArrayLike, stress: List[Series]) -> ArrayLike:
         if self._simulation is None:
