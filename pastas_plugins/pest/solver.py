@@ -21,6 +21,7 @@ class PestSolver(BaseSolver):
         noptmax: int = 100,
         pcov: Optional[DataFrame] = None,
         nfev: Optional[int] = None,
+        remove_existing: bool = True, # mainly for test purposes, possibly remove later?
         **kwargs,
     ) -> None:
         BaseSolver.__init__(self, pcov=pcov, nfev=nfev, **kwargs)
@@ -32,14 +33,15 @@ class PestSolver(BaseSolver):
         self.temp_ws = Path(temp_ws)
         self.exe_name = Path(exe_name) # pest executable
         self.pf = pyemu.utils.PstFrom(
-            original_d=self.model_ws, new_d=self.temp_ws, remove_existing=True
+            original_d=self.model_ws, new_d=self.temp_ws, remove_existing=remove_existing
         )
         self.noptmax = noptmax
 
     def setup_model(self):
         """Setup and export Pastas model for optimization"""
         # setup parameters
-        parameters = self.ml.parameters.copy()
+        self.vary = self.ml.parameters.vary.values.astype(bool)
+        parameters = self.ml.parameters[self.vary].copy()
         parameters.index = [p.replace("_A", "_g") for p in parameters.index]
         parameters.index.name = "parnames"
         parameters.loc[:, "optimal"] = parameters.loc[:, "initial"]
@@ -58,7 +60,7 @@ class PestSolver(BaseSolver):
         observations = self.ml.observations()
         observations.name = "Observations"
         observations.to_csv(self.model_ws / "simulation.csv")
-        copy_file(self.model_ws / "parameters_sel.csv", self.temp_ws)
+        copy_file(self.model_ws / "simulation.csv", self.temp_ws)
         self.observations = observations
 
         # model
@@ -129,23 +131,27 @@ class PestGlmSolver(PestSolver):
 
         # optimal paramters
         ipar = pd.read_csv(self.temp_ws / "pest.ipar", index_col=0).transpose()
-        ipar.index = self.ml.parameters.index
-        optimal = ipar.iloc[:, -1].values
+        ipar.index = self.ml.parameters.index[self.vary]
+        optimal = self.ml.parameters["initial"].values
+        optimal[self.vary] = ipar.iloc[:, -1].values
 
         # covariance
-        # pcov = pd.read_csv(
-        #     self.temp_ws / f"pest.{ipar.columns[-1]}.post.cov",
-        #     sep="\s+",
-        #     skiprows=[0],
-        #     nrows=4,
-        #     header=None,
-        # )
-        # self.pcov = pcov
+        pcov = pd.read_csv(
+            temp_ws / f"pest.{ipar.columns[-1]}.post.cov",
+            sep="\s+",
+            skiprows=[0],
+            nrows=len(ipar.index),
+            header=None,
+        )
+        pcov.index = ipar.index
+        pcov.columns = ipar.index
+        self.pcov = pcov
+        stderr = np.zeros(len(optimal)) * np.nan
+        stderr[self.vary] = np.sqrt(np.diag(self.pcov.values))
 
         # dummy return values
         self.obj_func = 0.0
         success = True  # always :)
-        stderr = np.zeros_like(optimal)  # replace by good covariance later
         return success, optimal, stderr
 
 
