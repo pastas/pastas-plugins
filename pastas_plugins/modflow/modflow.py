@@ -1,6 +1,6 @@
 import functools
-from typing import List, Protocol
 import logging
+from typing import List, Protocol
 
 import flopy
 import numpy as np
