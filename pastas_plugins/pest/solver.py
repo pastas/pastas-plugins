@@ -132,12 +132,13 @@ class PestGlmSolver(PestSolver):
         # optimal paramters
         ipar = pd.read_csv(self.temp_ws / "pest.ipar", index_col=0).transpose()
         ipar.index = self.ml.parameters.index[self.vary]
-        optimal = self.ml.parameters["initial"].values
-        optimal[self.vary] = ipar.iloc[:, -1].values
+        optimal = self.ml.parameters["initial"].copy().values
+        self.nfev = ipar.columns[-1]
+        optimal[self.vary] = ipar.loc[:, self.nfev].values
 
         # covariance
         pcov = pd.read_csv(
-            temp_ws / f"pest.{ipar.columns[-1]}.post.cov",
+            self.temp_ws / f"pest.{self.nfev}.post.cov",
             sep="\s+",
             skiprows=[0],
             nrows=len(ipar.index),
