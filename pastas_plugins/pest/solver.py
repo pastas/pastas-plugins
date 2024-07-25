@@ -10,7 +10,6 @@ from pastas.solver import BaseSolver
 
 np.random.seed(pyemu.en.SEED)  # set seed
 
-
 class PestSolver(BaseSolver):
     """PEST solver base class"""
 
@@ -19,6 +18,7 @@ class PestSolver(BaseSolver):
         exe_name: Union[str, Path] = "pestpp",
         model_ws: Union[str, Path] = Path("model"),
         temp_ws: Union[str, Path] = Path("temp"),
+        noptmax: int = 100,
         pcov: Optional[DataFrame] = None,
         nfev: Optional[int] = None,
         **kwargs,
@@ -34,6 +34,7 @@ class PestSolver(BaseSolver):
         self.pf = pyemu.utils.PstFrom(
             original_d=self.model_ws, new_d=self.temp_ws, remove_existing=True
         )
+        self.noptmax = noptmax
 
     def setup_model(self):
         """Setup and export Pastas model for optimization"""
@@ -91,16 +92,12 @@ class PestSolver(BaseSolver):
         pst.parameter_data.loc[:, ["parlbnd", "parubnd"]] = self.ml.parameters.loc[
             :, ["pmin", "pmax"]
         ].values  # parameter bounds
-        pst.control_data.noptmax = 100  # optimization runs
+        pst.control_data.noptmax = self.noptmax  # optimization runs
         pst.write(self.pf.new_d / "pest.pst", version=2)
 
     def run(self):
         copy_file(self.exe_name, self.temp_ws)
         pyemu.os_utils.run(f"{self.exe_name.name} pest.pst", cwd=self.pf.new_d)
-
-    def obj_func(self, **kwargs) -> float:
-        """dummy objective function"""
-        return 0.0
 
 
 class PestGlmSolver(PestSolver):
@@ -146,6 +143,7 @@ class PestGlmSolver(PestSolver):
         # self.pcov = pcov
 
         # dummy return values
+        self.obj_func = 0.0
         success = True  # always :)
         stderr = np.zeros_like(optimal)  # replace by good covariance later
         return success, optimal, stderr
