@@ -1,6 +1,6 @@
 def run():
-    from pandas import Index, Series, read_csv
     from numpy import linspace
+    from pandas import Index, Series, read_csv
 
     parameters = read_csv("parameters_sel.csv", index_col=0)
     print("parameters view\n", parameters)
