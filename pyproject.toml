@@ -51,6 +51,7 @@ rtd = [
         "myst_nb",
         "numpydoc",
         "sphinx_design",
+        "tqdm",
 ]
 
 [tool.setuptools.dynamic]
