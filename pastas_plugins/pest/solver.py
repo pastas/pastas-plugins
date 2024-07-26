@@ -65,6 +65,7 @@ class PestSolver(BaseSolver):
 
         # model
         self.ml.to_file(self.model_ws / "model.pas")
+        copy_file(self.model_ws / "model.pas", self.temp_ws)
 
     def setup_files(self):
         """Setup PEST structure for optimization"""
