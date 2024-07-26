@@ -147,11 +147,12 @@ class PestGlmSolver(PestSolver):
         pcov.index = ipar.index
         pcov.columns = ipar.index
         self.pcov = pcov
-        stderr = np.zeros(len(optimal)) * np.nan
+        stderr = np.full(len(optimal), np.nan)
         stderr[self.vary] = np.sqrt(np.diag(self.pcov.values))
 
-        # dummy return values
-        self.obj_func = 0.0
+        # objective function value (phi)
+        iobj = pd.read_csv(self.temp_ws / "pest.iobj", index_col=0)
+        self.obj_func = iobj.at[self.nfev, "total_phi"]
         success = True  # always :)
         return success, optimal, stderr
 
