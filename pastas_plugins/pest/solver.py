@@ -10,6 +10,7 @@ from pastas.solver import BaseSolver
 
 np.random.seed(pyemu.en.SEED)  # set seed
 
+
 class PestSolver(BaseSolver):
     """PEST solver base class"""
 
@@ -21,7 +22,7 @@ class PestSolver(BaseSolver):
         noptmax: int = 100,
         pcov: Optional[DataFrame] = None,
         nfev: Optional[int] = None,
-        remove_existing: bool = True, # mainly for test purposes, possibly remove later?
+        remove_existing: bool = True,  # mainly for test purposes, possibly remove later?
         **kwargs,
     ) -> None:
         BaseSolver.__init__(self, pcov=pcov, nfev=nfev, **kwargs)
@@ -31,9 +32,11 @@ class PestSolver(BaseSolver):
             self.model_ws.mkdir(parents=True)
         # template workspace (for pest files)
         self.temp_ws = Path(temp_ws)
-        self.exe_name = Path(exe_name) # pest executable
+        self.exe_name = Path(exe_name)  # pest executable
         self.pf = pyemu.utils.PstFrom(
-            original_d=self.model_ws, new_d=self.temp_ws, remove_existing=remove_existing
+            original_d=self.model_ws,
+            new_d=self.temp_ws,
+            remove_existing=remove_existing,
         )
         self.noptmax = noptmax
 
