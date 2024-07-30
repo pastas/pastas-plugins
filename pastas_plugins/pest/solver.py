@@ -199,7 +199,7 @@ class PestHpSolver(PestSolver):
     def solve(self, **kwargs) -> Tuple[bool, np.ndarray, np.ndarray]:
         self.setup_model()
         self.setup_files(version=1)
-        # start threads
+        # start consecutive thread for pest_hp and agent_hp excutable
         threads = [
             Thread(target=self.run, args=(f" /h :{self.port_number}",)),
             Thread(target=self.run_agent),
@@ -221,7 +221,7 @@ class PestHpSolver(PestSolver):
         self.nfev = ofr.index[-1]
         self.obj_func = ofr.at[self.nfev, "total"]
 
-        return True, optimal, np.zeros_like(optimal)
+        return True, optimal, np.full_like(optimal, np.nan)
 
     def run_agent(self):
         pyemu.os_utils.run(
