@@ -22,22 +22,24 @@ class PestSolver(BaseSolver):
         noptmax: int = 100,
         pcov: Optional[DataFrame] = None,
         nfev: Optional[int] = None,
-        remove_existing: bool = True,  # mainly for test purposes, possibly remove later?
+        long_names: bool = True,
         **kwargs,
     ) -> None:
         BaseSolver.__init__(self, pcov=pcov, nfev=nfev, **kwargs)
         # model workspace (for pastas files)
-        self.model_ws = Path(model_ws)
+        self.model_ws = Path(model_ws).resolve()
         if not self.model_ws.exists():
             self.model_ws.mkdir(parents=True)
         # template workspace (for pest files)
-        self.temp_ws = Path(temp_ws)
-        self.exe_name = Path(exe_name)  # pest executable
+        self.temp_ws = Path(temp_ws).resolve()
+        self.exe_name = Path(exe_name).resolve()  # pest executable
         self.pf = pyemu.utils.PstFrom(
             original_d=self.model_ws,
             new_d=self.temp_ws,
-            remove_existing=remove_existing,
+            remove_existing=True,
+            longnames=long_names,
         )
+        copy_file(self.exe_name, self.temp_ws)  # copy pest executable
         self.noptmax = noptmax
 
     def setup_model(self):
@@ -70,7 +72,7 @@ class PestSolver(BaseSolver):
         self.ml.to_file(self.model_ws / "model.pas")
         copy_file(self.model_ws / "model.pas", self.temp_ws)
 
-    def setup_files(self):
+    def setup_files(self, version: int = 2):
         """Setup PEST structure for optimization"""
         # parameters
         self.pf.add_parameters(
@@ -99,11 +101,12 @@ class PestSolver(BaseSolver):
             :, ["pmin", "pmax"]
         ].values  # parameter bounds
         pst.control_data.noptmax = self.noptmax  # optimization runs
-        pst.write(self.pf.new_d / "pest.pst", version=2)
+        pst.write(self.pf.new_d / "pest.pst", version=version)
 
-    def run(self):
-        copy_file(self.exe_name, self.temp_ws)
-        pyemu.os_utils.run(f"{self.exe_name.name} pest.pst", cwd=self.pf.new_d)
+    def run(self, arg_str: str = ""):
+        pyemu.os_utils.run(
+            f"{self.exe_name.name} pest.pst{arg_str}", cwd=self.pf.new_d, verbose=True
+        )
 
 
 class PestGlmSolver(PestSolver):
