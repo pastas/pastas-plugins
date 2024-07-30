@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from platform import node as get_computername
 from shutil import copy as copy_file
@@ -11,6 +12,8 @@ import pyemu
 from pandas import DataFrame
 from pastas.solver import BaseSolver
 
+logger = logging.getLogger(__name__)
+
 np.random.seed(pyemu.en.SEED)  # set seed
 
 
@@ -23,6 +26,7 @@ class PestSolver(BaseSolver):
         model_ws: Union[str, Path] = Path("model"),
         temp_ws: Union[str, Path] = Path("temp"),
         noptmax: int = 0,
+        control_data: Optional[dict] = None,
         pcov: Optional[DataFrame] = None,
         nfev: Optional[int] = None,
         long_names: bool = True,
@@ -44,6 +48,7 @@ class PestSolver(BaseSolver):
         )
         copy_file(self.exe_name, self.temp_ws)  # copy pest executable
         self.noptmax = noptmax
+        self.control_data = control_data
 
     def setup_model(self):
         """Setup and export Pastas model for optimization"""
@@ -99,11 +104,19 @@ class PestSolver(BaseSolver):
         self.pf.mod_py_cmds.append("run()")
 
         # create control file
-        pst = self.pf.build_pst()
+        pst = self.pf.build_pst(self.pf.new_d / "pest.pst", version=version)
         pst.parameter_data.loc[:, ["parlbnd", "parubnd"]] = self.ml.parameters.loc[
             :, ["pmin", "pmax"]
         ].values  # parameter bounds
         pst.control_data.noptmax = self.noptmax  # optimization runs
+        if self.control_data is not None:
+            for key, value in self.control_data.items():
+                if key == "control_data":
+                    logger.warning(
+                        "noptmax is set as an attribute and can't be set using the `control_data` dictionary"
+                    )
+                else:
+                    setattr(pst.control_data, key, value)
         pst.write(self.pf.new_d / "pest.pst", version=version)
 
     def run(self, arg_str: str = ""):
@@ -120,6 +133,8 @@ class PestGlmSolver(PestSolver):
         exe_name: Union[str, Path] = "pestpp-glm",
         model_ws: Union[str, Path] = Path("model"),
         temp_ws: Union[str, Path] = Path("temp"),
+        noptmax: int = 0,
+        control_data: Optional[dict] = None,
         pcov: Optional[DataFrame] = None,
         nfev: Optional[int] = None,
         **kwargs,
@@ -129,8 +144,11 @@ class PestGlmSolver(PestSolver):
             exe_name=exe_name,
             model_ws=model_ws,
             temp_ws=temp_ws,
+            noptmax=noptmax,
+            control_data=control_data,
             pcov=pcov,
             nfev=nfev,
+            long_names=True,
             **kwargs,
         )
 
@@ -176,6 +194,8 @@ class PestHpSolver(PestSolver):
         exe_agent: Union[str, Path] = "agent_hp",
         model_ws: Union[str, Path] = Path("model"),
         temp_ws: Union[str, Path] = Path("temp"),
+        noptmax: int = 0,
+        control_data: Optional[dict] = None,
         pcov: Optional[DataFrame] = None,
         nfev: Optional[int] = None,
         port_number: int = 4004,
@@ -189,11 +209,13 @@ class PestHpSolver(PestSolver):
             pcov=pcov,
             nfev=nfev,
             long_names=False,
+            noptmax=noptmax,
+            control_data=control_data,
             **kwargs,
         )
+        self.exe_agent = Path(exe_agent)
         self.port_number = port_number
         self.computername = get_computername()
-        self.exe_agent = Path(exe_agent)
         copy_file(self.exe_agent, self.temp_ws)  # copy agent executable
 
     def solve(self, **kwargs) -> Tuple[bool, np.ndarray, np.ndarray]:
