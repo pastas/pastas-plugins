@@ -35,7 +35,7 @@ class PestSolver(BaseSolver):
             self.model_ws.mkdir(parents=True)
         # template workspace (for pest files)
         self.temp_ws = Path(temp_ws).resolve()
-        self.exe_name = Path(exe_name).resolve()  # pest executable
+        self.exe_name = Path(exe_name)  # pest executable
         self.pf = pyemu.utils.PstFrom(
             original_d=self.model_ws,
             new_d=self.temp_ws,
@@ -193,7 +193,7 @@ class PestHpSolver(PestSolver):
         )
         self.port_number = port_number
         self.computername = get_computername()
-        self.exe_agent = Path(exe_agent).resolve()
+        self.exe_agent = Path(exe_agent)
         copy_file(self.exe_agent, self.temp_ws)  # copy agent executable
 
     def solve(self, **kwargs) -> Tuple[bool, np.ndarray, np.ndarray]:
