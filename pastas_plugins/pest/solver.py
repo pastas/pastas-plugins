@@ -1,5 +1,8 @@
 from pathlib import Path
+from platform import node as get_computername
 from shutil import copy as copy_file
+from threading import Thread
+from time import sleep
 from typing import Optional, Tuple, Union
 
 import numpy as np
@@ -162,6 +165,70 @@ class PestGlmSolver(PestSolver):
         self.obj_func = iobj.at[self.nfev, "total_phi"]
         success = True  # always :)
         return success, optimal, stderr
+
+
+class PestHpSolver(PestSolver):
+    """PEST_HP (highly parallelized) solver"""
+
+    def __init__(
+        self,
+        exe_name: Union[str, Path] = "pest_hp",
+        exe_agent: Union[str, Path] = "agent_hp",
+        model_ws: Union[str, Path] = Path("model"),
+        temp_ws: Union[str, Path] = Path("temp"),
+        pcov: Optional[DataFrame] = None,
+        nfev: Optional[int] = None,
+        port_number: int = 4004,
+        **kwargs,
+    ) -> None:
+        PestSolver.__init__(
+            self,
+            exe_name=exe_name,
+            model_ws=model_ws,
+            temp_ws=temp_ws,
+            pcov=pcov,
+            nfev=nfev,
+            long_names=False,
+            **kwargs,
+        )
+        self.port_number = port_number
+        self.computername = get_computername()
+        self.exe_agent = Path(exe_agent).resolve()
+        copy_file(self.exe_agent, self.temp_ws)  # copy agent executable
+
+    def solve(self, **kwargs) -> Tuple[bool, np.ndarray, np.ndarray]:
+        self.setup_model()
+        self.setup_files(version=1)
+        # start threads
+        threads = [
+            Thread(target=self.run, args=(f" /h :{self.port_number}",)),
+            Thread(target=self.run_agent),
+        ]
+        for t in threads:
+            t.start()
+            sleep(1.0)
+        for t in threads:
+            t.join()
+
+        par = pd.read_csv(
+            self.temp_ws / "pest.par", index_col=0, sep="\s+", skiprows=[0], header=None
+        )
+        par.index = self.ml.parameters.index[self.vary]
+        optimal = self.ml.parameters["initial"].copy().values
+        optimal[self.vary] = par.iloc[:, 0].values
+
+        ofr = pd.read_csv(self.temp_ws / "pest.ofr", index_col=0, sep="\s+", skiprows=2)
+        self.nfev = ofr.index[-1]
+        self.obj_func = ofr.at[self.nfev, "total"]
+
+        return True, optimal, np.zeros_like(optimal)
+
+    def run_agent(self):
+        pyemu.os_utils.run(
+            f"{self.exe_agent.name} pest.pst /h {self.computername}:{self.port_number}",
+            cwd=self.pf.new_d,
+            verbose=True,
+        )
 
 
 class PestIemSolver(PestSolver):
