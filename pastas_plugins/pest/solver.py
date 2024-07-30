@@ -22,7 +22,7 @@ class PestSolver(BaseSolver):
         exe_name: Union[str, Path] = "pestpp",
         model_ws: Union[str, Path] = Path("model"),
         temp_ws: Union[str, Path] = Path("temp"),
-        noptmax: int = 100,
+        noptmax: int = 0,
         pcov: Optional[DataFrame] = None,
         nfev: Optional[int] = None,
         long_names: bool = True,
