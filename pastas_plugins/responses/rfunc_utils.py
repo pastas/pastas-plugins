@@ -30,3 +30,25 @@ def kraijenhoff_parameters(
     A = -N * L**2 / (2 * Ks * D) * (b**2 - (1 / 4))
     a = Sy * L**2 / (pi**2 * Ks * D)
     return A, a, b
+
+
+def exponential_parameters(c: float, Sy: float) -> tuple[float]:
+    """Get Pastas parameters for an Exponential response for a linear
+    reservoir system.
+
+    Parameters
+    ----------
+    c : float
+        The drainage resistance in days.
+    Sy : float
+        The specific yield of the aquifer [-].
+
+    Returns
+    -------
+    tuple[float]
+        A tuple containing the response parameters A and a.
+    """
+
+    A = c
+    a = c * Sy
+    return A, a
