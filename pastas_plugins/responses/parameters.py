@@ -3,7 +3,7 @@ from scipy.special import k0
 
 
 def kraijenhoff_parameters(
-    S: float, K: float, D: float, x: float, L: float, N: float = 1.0e-3
+    S: float, K: float, D: float, x: float, L: float, N: float = 1.0
 ) -> tuple[float]:
     """Get Pastas parameters for Kraijenhoff van de Leur response function for
     an homogeneous aquifer between two parallel canals.
@@ -21,7 +21,7 @@ def kraijenhoff_parameters(
     L : float
         The aquifer length [L].
     N : float
-        The recharge flux length [L/T].
+        The recharge flux [L/T].
 
     Returns
     -------
@@ -34,7 +34,7 @@ def kraijenhoff_parameters(
     return A, a, b
 
 
-def exponential_parameters(S: float, c: float) -> tuple[float]:
+def exponential_parameters(S: float, c: float, N: 1.0) -> tuple[float]:
     """Get Pastas parameters for an Exponential response for a linear
     reservoir system.
 
@@ -44,6 +44,8 @@ def exponential_parameters(S: float, c: float) -> tuple[float]:
         The storativity of the aquifer [-].
     c : float
         The drainage resistance [T].
+    N : float
+        The recharge flux [L/T].
 
     Returns
     -------
@@ -51,7 +53,7 @@ def exponential_parameters(S: float, c: float) -> tuple[float]:
         A tuple containing the response parameters A and a.
     """
 
-    A = c
+    A = N * c
     a = c * S
     return A, a
 
