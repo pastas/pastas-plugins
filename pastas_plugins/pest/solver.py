@@ -268,7 +268,7 @@ class PestIemSolver(PestSolver):
         pcov: Optional[DataFrame] = None,
         nfev: Optional[int] = None,
         port_number: int = 4004,
-        n_cpu_cores: Optional[int] = None,
+        num_workers: Optional[int] = None,
         **kwargs,
     ) -> None:
         PestSolver.__init__(
@@ -284,18 +284,18 @@ class PestIemSolver(PestSolver):
         self.noptmax = noptmax
         self.control_data = control_data
         self.port_number = port_number
-        self.n_cpu_cores = (
-            cpu_count(logical=False) if n_cpu_cores is None else n_cpu_cores
+        self.num_workers = (
+            cpu_count(logical=False) if num_workers is None else num_workers
         )
 
     def prior_monte_carlo(self, ies_num_reals: int = 50) -> None:
         self.setup_model()
         self.setup_files()
-        if self.noptmax != -1:
-            logger.warning(
-                "noptmax is set to -1 for PESTPP-IEM to perform prior Monte Carlo simulation"
-            )
-            self.noptmax = -1
+        # if self.noptmax != -1:
+        #     logger.warning(
+        #         "noptmax is set to -1 for PESTPP-IEM to perform prior Monte Carlo simulation"
+        #     )
+        #     self.noptmax = -1
 
         pst = pyemu.Pst(str(self.temp_ws / "pest.pst"))
         pst.pestpp_options["ies_num_reals"] = (
@@ -307,7 +307,7 @@ class PestIemSolver(PestSolver):
             worker_dir=self.temp_ws,  # the folder which contains the "template" PEST dataset
             exe_rel_path=self.exe_name.name,  # the PEST software version we want to run
             pst_rel_path="pest.pst",  # the control file to use with PEST
-            num_workers=self.n_cpu_cores,  # how many agents to deploy
+            num_workers=self.num_workers,  # how many agents to deploy
             worker_root=".",  # where to deploy the agent directories; relative to where python is running
             port=self.port_number,  # the port to use for communication
             master_dir=self.master_ws,  # the manager directory
