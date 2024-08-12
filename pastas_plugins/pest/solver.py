@@ -80,16 +80,16 @@ class PestSolver(BaseSolver):
     def setup_model(self):
         """Setup and export Pastas model for optimization"""
         # setup parameters
-        self.vary = self.ml.parameters.vary.values.astype(bool)
-        parameters = self.ml.parameters[self.vary].copy()
-        parameters.index = [p.replace("_A", "_g") for p in parameters.index]
-        parameters.index.name = "parnames"
-        parameters.loc[:, "optimal"] = parameters.loc[:, "initial"]
         self.ml.set_parameter(
             "constant_d",
             pmin=parameters.at["constant_d", "initial"] - 10,
             pmax=parameters.at["constant_d", "initial"] + 10,
         )
+        self.vary = self.ml.parameters.vary.values.astype(bool)
+        parameters = self.ml.parameters[self.vary].copy()
+        parameters.index = [p.replace("_A", "_g") for p in parameters.index]
+        parameters.index.name = "parnames"
+        parameters.loc[:, "optimal"] = parameters.loc[:, "initial"]
 
         par_sel = parameters.loc[:, ["optimal"]]
         par_sel.to_csv(self.model_ws / "parameters_sel.csv")
