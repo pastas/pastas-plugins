@@ -50,29 +50,27 @@ class PestSolver(BaseSolver):
         copy_file(self.exe_name, self.temp_ws)  # copy pest executable
         self.noptmax = noptmax
         self.control_data = control_data
-        self.run_function = """
-        def run():
-            # load packages
-            from pathlib import Path
+        self.run_function = """def run():
+    # load packages
+    from pathlib import Path
 
-            from pandas import read_csv
-            from pastas.io.base import load as load_model
+    from pandas import read_csv
+    from pastas.io.base import load as load_model
 
-            # base path
-            fpath = Path(__file__).parent
+    # base path
+    fpath = Path(__file__).parent
 
-            # load pastas model
-            ml = load_model(fpath / "model.pas")
+    # load pastas model
+    ml = load_model(fpath / "model.pas")
 
-            # update model parameters
-            parameters = read_csv(fpath / "parameters_sel.csv", index_col=0)
-            for pname, val in parameters.loc[:, "optimal"].items():
-                ml.set_parameter(pname.replace("_g", "_A"), optimal=val)
+    # update model parameters
+    parameters = read_csv(fpath / "parameters_sel.csv", index_col=0)
+    for pname, val in parameters.loc[:, "optimal"].items():
+        ml.set_parameter(pname.replace("_g", "_A"), optimal=val)
 
-            # simulate
-            simulation = ml.simulate()
-            simulation.loc[ml.observations().index].to_csv(fpath / "simulation.csv")
-        """
+    # simulate
+    simulation = ml.simulate()
+    simulation.loc[ml.observations().index].to_csv(fpath / "simulation.csv")"""
 
     def write_run_function(self):
         """Write the run function to a file"""
