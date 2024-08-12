@@ -136,7 +136,7 @@ class PestSolver(BaseSolver):
         # create control file
         pst = self.pf.build_pst(self.pf.new_d / "pest.pst", version=version)
         pst.parameter_data.loc[:, ["parlbnd", "parubnd"]] = self.ml.parameters.loc[
-            :, ["pmin", "pmax"]
+            self.vary, ["pmin", "pmax"]
         ].values  # parameter bounds
         pst.control_data.noptmax = self.noptmax  # optimization runs
         if self.control_data is not None:
