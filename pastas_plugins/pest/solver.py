@@ -155,7 +155,8 @@ class PestSolver(BaseSolver):
         pst.parameter_data.loc[:, ["parubnd"]] = self.ml.parameters.loc[self.vary, "pmax"].values
         pst.parameter_data.loc[:, ["parchglim"]] = "relative"
         pst.parameter_data.loc[:, ["pargp"]] = self.par_sel.columns.to_list()
-        pst.observation_data.loc[:, "standard_deviation"] = obs_std
+        if obs_std > 0.0:
+            pst.observation_data.loc[:, "standard_deviation"] = obs_std
         pst.control_data.noptmax = self.noptmax  # optimization runs
         if self.control_data is not None:
             for key, value in self.control_data.items():
@@ -342,6 +343,8 @@ class PestIesSolver(PestSolver):
         # change ies_num_reals
         pst = self.load_pst()
         pst.pestpp_options["ies_num_reals"] = ies_num_reals
+        if obs_std == 0.0:
+            pst.pestpp_options["ies_no_noise"] = True
         self.write_pst(pst=pst, version=2)
 
         pyemu.os_utils.start_workers(
