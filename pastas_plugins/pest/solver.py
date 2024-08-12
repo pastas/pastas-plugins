@@ -91,7 +91,6 @@ class PestSolver(BaseSolver):
                 pmin=parameters.at["constant_d", "initial"] - 10.0,
                 pmax=parameters.at["constant_d", "initial"] + 10.0,
             )
-
         par_sel = parameters.loc[:, ["optimal"]]
         par_sel.to_csv(self.model_ws / "parameters_sel.csv")
         copy_file(self.model_ws / "parameters_sel.csv", self.temp_ws)
@@ -111,7 +110,14 @@ class PestSolver(BaseSolver):
         # write run function
         self.write_run_function()
 
-    def setup_files(self, version: int = 2):
+    def load_pst(self) -> pyemu.Pst:
+        """Load PEST control file"""
+        return pyemu.Pst(str(self.temp_ws / "pest.pst"))
+
+    def write_pst(self, pst: pyemu.Pst, version: int = 2) -> None:
+        pst.write(self.pf.new_d / "pest.pst", version=version)
+
+    def setup_files(self, version: int = 2, obs_std: float = 0.00):
         """Setup PEST structure for optimization"""
         # parameters
         self.pf.add_parameters(
@@ -119,8 +125,16 @@ class PestSolver(BaseSolver):
             index_cols=[self.par_sel.index.name],
             use_cols=self.par_sel.columns.to_list(),
             par_type="grid",
-            par_style="d",
+            par_style="direct",
+            transform="none",
+            # pargp=self.par_sel.columns.to_list(),
+            # par_name_base=self.par_sel.columns.to_list(), #[x.split("_")[0] for x in self.par_sel.columns],
+            # lower_bound=self.ml.parameters.loc[self.vary, "pmin"].values.tolist(),
+            # upper_bound=self.ml.parameters.loc[self.vary, "pmax"].values.tolist(),
+            # ult_lbound = self.ml.parameters.loc[self.vary, ["pmin"]].transpose().values.tolist(),
+            # ult_ubound = self.ml.parameters.loc[self.vary, ["pmax"]].transpose().values.tolist(),
         )
+
         # observations and simulation
         self.pf.add_observations(
             "simulation.csv",
@@ -136,9 +150,12 @@ class PestSolver(BaseSolver):
 
         # create control file
         pst = self.pf.build_pst(self.pf.new_d / "pest.pst", version=version)
-        pst.parameter_data.loc[:, ["parlbnd", "parubnd"]] = self.ml.parameters.loc[
-            self.vary, ["pmin", "pmax"]
-        ].values  # parameter bounds
+        # parameter bounds
+        pst.parameter_data.loc[:, ["parlbnd"]] = self.ml.parameters.loc[self.vary, "pmin"].values
+        pst.parameter_data.loc[:, ["parubnd"]] = self.ml.parameters.loc[self.vary, "pmax"].values
+        pst.parameter_data.loc[:, ["parchglim"]] = "relative"
+        pst.parameter_data.loc[:, ["pargp"]] = self.par_sel.columns.to_list()
+        pst.observation_data.loc[:, "standard_deviation"] = obs_std
         pst.control_data.noptmax = self.noptmax  # optimization runs
         if self.control_data is not None:
             for key, value in self.control_data.items():
@@ -148,7 +165,7 @@ class PestSolver(BaseSolver):
                     )
                 else:
                     setattr(pst.control_data, key, value)
-        pst.write(self.pf.new_d / "pest.pst", version=version)
+        self.write_pst(pst=pst, version=version)
 
     def run(self, arg_str: str = ""):
         pyemu.os_utils.run(
@@ -318,14 +335,14 @@ class PestIesSolver(PestSolver):
             cpu_count(logical=False) if num_workers is None else num_workers
         )
 
-    def run_ensembles(self, ies_num_reals: int = 50) -> None:
+    def run_ensembles(self, ies_num_reals: int = 50, obs_std: float=0.0) -> None:
         self.setup_model()
-        self.setup_files()
+        self.setup_files(obs_std=obs_std)
 
         # change ies_num_reals
-        pst = pyemu.Pst(str(self.temp_ws / "pest.pst"))
+        pst = self.load_pst()
         pst.pestpp_options["ies_num_reals"] = ies_num_reals
-        pst.write(self.temp_ws / "pest.pst", version=2)
+        self.write_pst(pst=pst, version=2)
 
         pyemu.os_utils.start_workers(
             worker_dir=self.temp_ws,  # the folder which contains the "template" PEST dataset
