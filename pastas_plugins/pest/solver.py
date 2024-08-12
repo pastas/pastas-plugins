@@ -319,21 +319,15 @@ class PestIemSolver(PestSolver):
             cpu_count(logical=False) if num_workers is None else num_workers
         )
 
-    def prior_monte_carlo(self, ies_num_reals: int = 50) -> None:
+    def run_ensembles(self, ies_num_reals: int = 50) -> None:
         self.setup_model()
         self.setup_files()
-        # if self.noptmax != -1:
-        #     logger.warning(
-        #         "noptmax is set to -1 for PESTPP-IEM to perform prior Monte Carlo simulation"
-        #     )
-        #     self.noptmax = -1
 
+        # change ies_num_reals
         pst = pyemu.Pst(str(self.temp_ws / "pest.pst"))
-        pst.pestpp_options["ies_num_reals"] = (
-            ies_num_reals  # starting with a real small ensemble!
-        )
-
+        pst.pestpp_options["ies_num_reals"] = ies_num_reals
         pst.write(self.temp_ws / "pest.pst", version=2)
+
         pyemu.os_utils.start_workers(
             worker_dir=self.temp_ws,  # the folder which contains the "template" PEST dataset
             exe_rel_path=self.exe_name.name,  # the PEST software version we want to run
@@ -344,10 +338,10 @@ class PestIemSolver(PestSolver):
             master_dir=self.master_ws,  # the manager directory
         )
 
-    def solve(self, **kwargs) -> None:
-        # does not work somehow
-        self.setup_model()
-        self.setup_files()
-        self.run()
+    def solve(self) -> None:
+        raise NotImplementedError("Currently not implemented. Need to check how to implement this properly with optimal parameters and stderr.")
+        # self.setup_model()
+        # self.setup_files()
+        # self.run()
 
         # return success, optimal, stderr
