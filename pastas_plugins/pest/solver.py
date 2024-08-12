@@ -283,12 +283,12 @@ class PestHpSolver(PestSolver):
         )
 
 
-class PestIemSolver(PestSolver):
-    """PESTPP-IEM (Iterative Ensemble Smoother) solver"""
+class PestIesSolver(PestSolver):
+    """PESTPP-IES (Iterative Ensemble Smoother) solver"""
 
     def __init__(
         self,
-        exe_name: Union[str, Path] = "pestpp-iem",
+        exe_name: Union[str, Path] = "pestpp-ies",
         model_ws: Union[str, Path] = Path("model"),
         temp_ws: Union[str, Path] = Path("temp"),
         master_ws: Union[str, Path] = Path("master"),
