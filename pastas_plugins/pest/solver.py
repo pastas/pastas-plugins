@@ -1,3 +1,4 @@
+from functools import lru_cache
 import logging
 from pathlib import Path
 from platform import node as get_computername
@@ -110,10 +111,6 @@ class PestSolver(BaseSolver):
 
         # write run function
         self.write_run_function()
-
-    def load_pst(self) -> pyemu.Pst:
-        """Load PEST control file"""
-        return pyemu.Pst(str(self.temp_ws / "pest.pst"))
 
     def write_pst(self, pst: pyemu.Pst, version: int = 2) -> None:
         pst.write(self.pf.new_d / "pest.pst", version=version)
@@ -342,7 +339,7 @@ class PestIesSolver(PestSolver):
         self.setup_files(obs_std=obs_std)
 
         # change ies_num_reals
-        pst = self.load_pst()
+        pst = pyemu.Pst(str(self.temp_ws / "pest.pst"))
         pst.pestpp_options["ies_num_reals"] = ies_num_reals
         if obs_std == 0.0:
             pst.pestpp_options["ies_no_noise"] = True
@@ -358,10 +355,48 @@ class PestIesSolver(PestSolver):
             master_dir=self.master_ws,  # the manager directory
         )
 
-    def solve(self) -> None:
-        raise NotImplementedError("Currently not implemented. Need to check how to implement this properly with optimal parameters and stderr.")
-        # self.setup_model()
-        # self.setup_files()
-        # self.run()
+        phidf = pd.read_csv(self.master_ws / "pest.phi.meas.csv", index_col=0)
+        self.nfev = phidf.index[-1]
+        self.obj_func = phidf.at[self.nfev, "base"] # could also get mean of all ensembles?
 
-        # return success, optimal, stderr
+    def parameter_ensemble(self, iteration: int = 0) -> pyemu.ParameterEnsemble:
+        pst = pyemu.Pst(str(self.master_ws / "pest.pst"))
+        pe = pyemu.ParameterEnsemble.from_csv(pst=pst, filename=self.master_ws / f"pest.{iteration}.par.csv")
+        return pe
+
+    @lru_cache()
+    def simulation_ensemble(self, iteration: int = 0, tmin: pd.Timestamp = None, tmax: pd.Timestamp = None) -> pd.DataFrame:
+        ipar = self.parameter_ensemble(iteration=iteration).transpose()
+        ipar.index = self.ml.parameters.index[self.vary]
+
+        tmin = self.ml.settings["tmin"] if tmin is None else tmin
+        tmax = self.ml.settings["tmax"] if tmax is None else tmax
+        se = pd.DataFrame(np.nan, columns=ipar.coluns, index=pd.date_range(tmin, tmax, freq=self.ml.settings["freq"]))
+
+        for idx in ipar.columns:
+            self.ml.parameters.loc[ipar.index, "optimal"] = ipar.loc[:, idx].values
+            se.loc[:, idx] = self.ml.simulate(tmin=tmin, tmax=tmax).loc[se.index].values
+
+        return se
+
+    def observation_ensemble(self) -> pyemu.ParameterEnsemble:
+        pst = pyemu.Pst(str(self.master_ws / "pest.pst"))
+        oe = pyemu.ObservationEnsemble.from_csv(pst=pst, filename=self.master_ws / "pest.obs+noise.csv")
+        return oe
+
+    def solve(self, run_ensembles=True, **kwargs) -> None:
+        """Gets the base realisation of the parameter ensemble"""
+        if run_ensembles:
+            self.run_ensembles(**kwargs)
+
+        # optimal parameters
+        ipar = self.parameter_ensemble(iteration=self.nfev).transpose()
+        ipar.index = self.ml.parameters.index[self.vary]
+        optimal = self.ml.parameters["initial"].copy().values
+        optimal[self.vary] = ipar.loc[:, "base"].values
+
+        # standard error (could be totally the wrong way to think about/calculate this)
+        stderr = np.full_like(optimal, np.nan)
+        stderr[self.vary] = ipar.std(axis=1) / len(ipar.columns)
+
+        return True, optimal, stderr
