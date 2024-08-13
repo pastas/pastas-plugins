@@ -88,11 +88,11 @@ class PestSolver(BaseSolver):
         parameters.index.name = "parnames"
         parameters.loc[:, "optimal"] = parameters.loc[:, "initial"]
         if "constant_d" in parameters.index:
-            self.ml.set_parameter(
-                "constant_d",
-                pmin=parameters.at["constant_d", "initial"] - 10.0,
-                pmax=parameters.at["constant_d", "initial"] + 10.0,
-            )
+            if np.isnan(parameters.at["constant_d", "pmin"]):
+                self.ml.set_parameter("constant_d", pmin=parameters.at["constant_d", "initial"] - 10.0)
+            if np.isnan(parameters.at["constant_d", "pmax"]):
+               self.ml.set_parameter("constant_d", pmax=parameters.at["constant_d", "initial"] + 10.0)
+
         par_sel = parameters.loc[:, ["optimal"]]
         par_sel.to_csv(self.model_ws / "parameters_sel.csv")
         copy_file(self.model_ws / "parameters_sel.csv", self.temp_ws)
@@ -371,7 +371,7 @@ class PestIesSolver(PestSolver):
 
         tmin = self.ml.settings["tmin"] if tmin is None else tmin
         tmax = self.ml.settings["tmax"] if tmax is None else tmax
-        se = pd.DataFrame(np.nan, columns=ipar.coluns, index=pd.date_range(tmin, tmax, freq=self.ml.settings["freq"]))
+        se = pd.DataFrame(np.nan, columns=ipar.columns, index=pd.date_range(tmin, tmax, freq=self.ml.settings["freq"]))
 
         for idx in ipar.columns:
             self.ml.parameters.loc[ipar.index, "optimal"] = ipar.loc[:, idx].values
