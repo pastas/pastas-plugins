@@ -5,7 +5,7 @@ from platform import node as get_computername
 from shutil import copy as copy_file
 from threading import Thread
 from time import sleep
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, Dict
 
 import numpy as np
 import pandas as pd
@@ -334,7 +334,7 @@ class PestIesSolver(PestSolver):
             cpu_count(logical=False) if num_workers is None else num_workers
         )
 
-    def run_ensembles(self, ies_num_reals: int = 50, obs_std: float=0.0) -> None:
+    def run_ensembles(self, ies_num_reals: int = 50, obs_std: float=0.0, pestpp_options: Optional[Dict] = None) -> None:
         self.setup_model()
         self.setup_files(obs_std=obs_std)
 
@@ -343,6 +343,9 @@ class PestIesSolver(PestSolver):
         pst.pestpp_options["ies_num_reals"] = ies_num_reals
         if obs_std == 0.0:
             pst.pestpp_options["ies_no_noise"] = True
+        pestpp_options = {} if pestpp_options is None else pestpp_options
+        pst.pestpp_options.update(pestpp_options)
+
         self.write_pst(pst=pst, version=2)
 
         pyemu.os_utils.start_workers(
@@ -357,7 +360,8 @@ class PestIesSolver(PestSolver):
 
         phidf = pd.read_csv(self.master_ws / "pest.phi.meas.csv", index_col=0)
         self.nfev = phidf.index[-1]
-        self.obj_func = phidf.at[self.nfev, "base"] # could also get mean of all ensembles?
+        if self.noptmax > 0:
+            self.obj_func = phidf.at[self.nfev, "base"] # could also get mean of all ensembles?
 
     def parameter_ensemble(self, iteration: int = 0) -> pyemu.ParameterEnsemble:
         pst = pyemu.Pst(str(self.master_ws / "pest.pst"))
