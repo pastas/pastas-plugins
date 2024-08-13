@@ -66,7 +66,8 @@ class PestSolver(BaseSolver):
     # update model parameters
     parameters = read_csv(fpath / "parameters_sel.csv", index_col=0)
     for pname, val in parameters.loc[:, "optimal"].items():
-        ml.set_parameter(pname.replace("_g", "_A"), optimal=val)
+        pname = pname.replace("_g", "_A") if pname.endswith("_g") else pname
+        ml.set_parameter(pname, optimal=val)
 
     # simulate
     simulation = ml.simulate()
@@ -82,7 +83,7 @@ class PestSolver(BaseSolver):
         # setup parameters
         self.vary = self.ml.parameters.vary.values.astype(bool)
         parameters = self.ml.parameters[self.vary].copy()
-        parameters.index = [p.replace("_A", "_g") for p in parameters.index]
+        parameters.index = [p.replace("_A", "_g") if p.endswith("_A") else p for p in parameters.index]
         parameters.index.name = "parnames"
         parameters.loc[:, "optimal"] = parameters.loc[:, "initial"]
         if "constant_d" in parameters.index:
@@ -352,7 +353,7 @@ class PestIesSolver(PestSolver):
             exe_rel_path=self.exe_name.name,  # the PEST software version we want to run
             pst_rel_path="pest.pst",  # the control file to use with PEST
             num_workers=self.num_workers,  # how many agents to deploy
-            worker_root=".",  # where to deploy the agent directories; relative to where python is running
+            worker_root=self.master_ws.parent,  # where to deploy the agent directories; relative to where python is running
             port=self.port_number,  # the port to use for communication
             master_dir=self.master_ws,  # the manager directory
         )
