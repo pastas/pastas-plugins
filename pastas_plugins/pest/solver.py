@@ -397,6 +397,6 @@ class PestIesSolver(PestSolver):
 
         # standard error (could be totally the wrong way to think about/calculate this)
         stderr = np.full_like(optimal, np.nan)
-        stderr[self.vary] = ipar.std(axis=1) / len(ipar.columns)
+        stderr[self.vary] = ipar.std(axis=1) / np.sqrt(len(ipar.columns))
 
         return True, optimal, stderr
