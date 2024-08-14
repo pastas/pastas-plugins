@@ -82,11 +82,11 @@ class PestSolver(BaseSolver):
     def setup_model(self):
         """Setup and export Pastas model for optimization"""
         # setup parameters
+        self.ml.paramters.loc[:, "optimal"] = self.ml.parameters.loc[:, "initial"]
         self.vary = self.ml.parameters.vary.values.astype(bool)
         parameters = self.ml.parameters[self.vary].copy()
         parameters.index = [p.replace("_A", "_g") if p.endswith("_A") else p for p in parameters.index]
         parameters.index.name = "parnames"
-        parameters.loc[:, "optimal"] = parameters.loc[:, "initial"]
         if "constant_d" in parameters.index:
             if np.isnan(parameters.at["constant_d", "pmin"]):
                 self.ml.set_parameter("constant_d", pmin=parameters.at["constant_d", "initial"] - 10.0)
