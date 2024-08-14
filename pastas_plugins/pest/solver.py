@@ -375,7 +375,8 @@ class PestIesSolver(PestSolver):
 
         tmin = self.ml.settings["tmin"] if tmin is None else tmin
         tmax = self.ml.settings["tmax"] if tmax is None else tmax
-        se = pd.DataFrame(np.nan, columns=ipar.columns, index=pd.date_range(tmin, tmax, freq=self.ml.settings["freq"]))
+        freq = "D" if self.ml.settings["freq"] is not None else self.ml.settings["freq"]
+        se = pd.DataFrame(np.nan, columns=ipar.columns, index=pd.date_range(start=tmin, end=tmax, freq=freq))
 
         for idx in ipar.columns:
             self.ml.parameters.loc[ipar.index, "optimal"] = ipar.loc[:, idx].values
