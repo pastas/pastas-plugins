@@ -12,6 +12,7 @@ import pandas as pd
 import pyemu
 from pandas import DataFrame
 from pastas.solver import BaseSolver
+from pastas.typing import TimestampType
 from psutil import cpu_count
 
 logger = logging.getLogger(__name__)
@@ -85,13 +86,19 @@ class PestSolver(BaseSolver):
         self.ml.parameters.loc[:, "optimal"] = self.ml.parameters.loc[:, "initial"]
         self.vary = self.ml.parameters.vary.values.astype(bool)
         parameters = self.ml.parameters[self.vary].copy()
-        parameters.index = [p.replace("_A", "_g") if p.endswith("_A") else p for p in parameters.index]
+        parameters.index = [
+            p.replace("_A", "_g") if p.endswith("_A") else p for p in parameters.index
+        ]
         parameters.index.name = "parnames"
         if "constant_d" in parameters.index:
             if np.isnan(parameters.at["constant_d", "pmin"]):
-                self.ml.set_parameter("constant_d", pmin=parameters.at["constant_d", "initial"] - 10.0)
+                self.ml.set_parameter(
+                    "constant_d", pmin=parameters.at["constant_d", "initial"] - 10.0
+                )
             if np.isnan(parameters.at["constant_d", "pmax"]):
-               self.ml.set_parameter("constant_d", pmax=parameters.at["constant_d", "initial"] + 10.0)
+                self.ml.set_parameter(
+                    "constant_d", pmax=parameters.at["constant_d", "initial"] + 10.0
+                )
 
         par_sel = parameters.loc[:, ["optimal"]]
         par_sel.to_csv(self.model_ws / "parameters_sel.csv")
@@ -149,8 +156,12 @@ class PestSolver(BaseSolver):
         # create control file
         pst = self.pf.build_pst(self.pf.new_d / "pest.pst", version=version)
         # parameter bounds
-        pst.parameter_data.loc[:, ["parlbnd"]] = self.ml.parameters.loc[self.vary, "pmin"].values
-        pst.parameter_data.loc[:, ["parubnd"]] = self.ml.parameters.loc[self.vary, "pmax"].values
+        pst.parameter_data.loc[:, ["parlbnd"]] = self.ml.parameters.loc[
+            self.vary, "pmin"
+        ].values
+        pst.parameter_data.loc[:, ["parubnd"]] = self.ml.parameters.loc[
+            self.vary, "pmax"
+        ].values
         pst.parameter_data.loc[:, ["parchglim"]] = "relative"
         pst.parameter_data.loc[:, ["pargp"]] = self.par_sel.columns.to_list()
         if obs_std > 0.0:
@@ -334,7 +345,12 @@ class PestIesSolver(PestSolver):
             cpu_count(logical=False) if num_workers is None else num_workers
         )
 
-    def run_ensembles(self, ies_num_reals: int = 50, obs_std: float=0.0, pestpp_options: Optional[Dict] = None) -> None:
+    def run_ensembles(
+        self,
+        ies_num_reals: int = 50,
+        obs_std: float = 0.0,
+        pestpp_options: Optional[Dict] = None,
+    ) -> None:
         self.setup_model()
         self.setup_files(obs_std=obs_std)
 
@@ -361,32 +377,64 @@ class PestIesSolver(PestSolver):
         phidf = pd.read_csv(self.master_ws / "pest.phi.meas.csv", index_col=0)
         self.nfev = phidf.index[-1]
         if self.noptmax > 0:
-            self.obj_func = phidf.at[self.nfev, "base"] # could also get mean of all ensembles?
+            self.obj_func = phidf.at[
+                self.nfev, "base"
+            ]  # could also get mean of all ensembles?
 
     def parameter_ensemble(self, iteration: int = 0) -> pyemu.ParameterEnsemble:
         pst = pyemu.Pst(str(self.master_ws / "pest.pst"))
-        pe = pyemu.ParameterEnsemble.from_csv(pst=pst, filename=self.master_ws / f"pest.{iteration}.par.csv")
+        pe = pyemu.ParameterEnsemble.from_csv(
+            pst=pst, filename=self.master_ws / f"pest.{iteration}.par.csv"
+        )
         return pe
 
     @lru_cache()
-    def simulation_ensemble(self, iteration: int = 0, tmin: pd.Timestamp = None, tmax: pd.Timestamp = None) -> pd.DataFrame:
-        ipar = self.parameter_ensemble(iteration=iteration).transpose()
-        ipar.index = self.ml.parameters.index[self.vary]
+    def simulation_ensemble(
+        self,
+        iteration: int = 0,
+        from_file: bool = False,
+        tmin: TimestampType = None,
+        tmax: TimestampType = None,
+    ) -> pd.DataFrame:
+        if from_file:
+            pst = pyemu.Pst(str(self.master_ws / "pest.pst"))
+            se = (
+                pyemu.ObservationEnsemble.from_csv(
+                    pst=pst, filename=self.master_ws / f"pest.{iteration}.obs.csv"
+                )
+                .transpose()
+                .set_index(self.ml.observations().index)
+            )
+        else:
+            ipar = self.parameter_ensemble(iteration=iteration).transpose()
+            ipar.index = self.ml.parameters.index[self.vary]
 
-        tmin = self.ml.settings["tmin"] if tmin is None else tmin
-        tmax = self.ml.settings["tmax"] if tmax is None else tmax
-        freq = "D" if self.ml.settings["freq"] is not None else self.ml.settings["freq"]
-        se = pd.DataFrame(np.nan, columns=ipar.columns, index=pd.date_range(start=tmin, end=tmax, freq=freq))
+            tmin = self.ml.settings["tmin"] if tmin is None else pd.Timestamp(tmin)
+            tmax = self.ml.settings["tmax"] if tmax is None else pd.Timestamp(tmax)
+            freq = (
+                "D"
+                if self.ml.settings["freq"] is not None
+                else self.ml.settings["freq"]
+            )
+            se = pd.DataFrame(
+                np.nan,
+                columns=ipar.columns,
+                index=pd.date_range(start=tmin, end=tmax, freq=freq),
+            )
 
-        for idx in ipar.columns:
-            self.ml.parameters.loc[ipar.index, "optimal"] = ipar.loc[:, idx].values
-            se.loc[:, idx] = self.ml.simulate(tmin=tmin, tmax=tmax).loc[se.index].values
+            for idx in ipar.columns:
+                self.ml.parameters.loc[ipar.index, "optimal"] = ipar.loc[:, idx].values
+                se.loc[:, idx] = (
+                    self.ml.simulate(tmin=tmin, tmax=tmax).loc[se.index].values
+                )
 
         return se
 
-    def observation_ensemble(self) -> pyemu.ParameterEnsemble:
+    def observation_ensemble(self) -> pyemu.ObservationEnsemble:
         pst = pyemu.Pst(str(self.master_ws / "pest.pst"))
-        oe = pyemu.ObservationEnsemble.from_csv(pst=pst, filename=self.master_ws / "pest.obs+noise.csv")
+        oe = pyemu.ObservationEnsemble.from_csv(
+            pst=pst, filename=self.master_ws / "pest.obs+noise.csv"
+        )
         return oe
 
     def solve(self, run_ensembles=True, **kwargs) -> None:
