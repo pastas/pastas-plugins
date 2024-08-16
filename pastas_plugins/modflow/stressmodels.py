@@ -64,7 +64,7 @@ class ModflowModel(StressModelBase):
         self.parameters = self.modflow.get_init_parameters(self.name)
 
     def to_dict(self, series: bool = True) -> dict:
-        pass
+        raise NotImplementedError()
 
     def get_stress(
         self,
@@ -101,7 +101,6 @@ class ModflowModel(StressModelBase):
             data=h,
             index=stress[0].index,
             name=self.name,
-            fastpath=True,
         )
 
     def _get_block(self, p, dt, tmin, tmax):

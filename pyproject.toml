@@ -51,10 +51,18 @@ rtd = [
         "myst_nb",
         "numpydoc",
         "sphinx_design",
+        "tqdm",
 ]
 
 [tool.setuptools.dynamic]
 version = { attr = "pastas_plugins.version.__version__" }
+
+[tool.ruff]
+extend-include = ["*.ipynb"]
+lint.extend-select = ["I"]
+show-fixes = true
+fix = true
+
 
 [tool.tox]
 legacy_tox_ini = """
