@@ -453,3 +453,62 @@ class PestIesSolver(PestSolver):
         stderr[self.vary] = ipar.std(axis=1) / np.sqrt(len(ipar.columns))
 
         return True, optimal, stderr
+
+
+class PestSenSolver(PestSolver):
+    """PESTPP-SEN (Global Sensitivity Analysis) solver"""
+
+    def __init__(
+        self,
+        exe_name: Union[str, Path] = "pestpp-sen",
+        model_ws: Union[str, Path] = Path("model"),
+        temp_ws: Union[str, Path] = Path("temp"),
+        master_ws: Union[str, Path] = Path("master"),
+        noptmax: int = 0,
+        control_data: Optional[dict] = None,
+        pcov: Optional[DataFrame] = None,
+        nfev: Optional[int] = None,
+        port_number: int = 4004,
+        num_workers: Optional[int] = None,
+        **kwargs,
+    ) -> None:
+        PestSolver.__init__(
+            self,
+            exe_name=exe_name,
+            model_ws=model_ws,
+            temp_ws=temp_ws,
+            pcov=pcov,
+            nfev=nfev,
+            **kwargs,
+        )
+        self.master_ws = master_ws
+        self.noptmax = noptmax
+        self.control_data = control_data
+        self.port_number = port_number
+        self.num_workers = (
+            cpu_count(logical=False) if num_workers is None else num_workers
+        )
+
+    def start(
+        self,
+        pestpp_options: Optional[Dict] = None,
+    ) -> None:
+        self.setup_model()
+        self.setup_files()
+
+        # change ies_num_reals
+        pst = pyemu.Pst(str(self.temp_ws / "pest.pst"))
+        pestpp_options = {} if pestpp_options is None else pestpp_options
+        pst.pestpp_options.update(pestpp_options)
+
+        self.write_pst(pst=pst, version=2)
+
+        pyemu.os_utils.start_workers(
+            worker_dir=self.temp_ws,  # the folder which contains the "template" PEST dataset
+            exe_rel_path=self.exe_name.name,  # the PEST software version we want to run
+            pst_rel_path="pest.pst",  # the control file to use with PEST
+            num_workers=self.num_workers,  # how many agents to deploy
+            worker_root=self.master_ws.parent,  # where to deploy the agent directories; relative to where python is running
+            port=self.port_number,  # the port to use for communication
+            master_dir=self.master_ws,  # the manager directory
+        )
