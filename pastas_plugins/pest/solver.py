@@ -518,6 +518,17 @@ class PestIesSolver(PestSolver):
         )
         return oe
 
+    def jacobian(self, iteration: int = 0) -> pd.DataFrame:
+        # jac_ies needs to be calculated manually
+        obs_ies = self.simulation_ensemble(iteration=iteration, from_file=True)
+        dsim = ((obs_ies - obs_ies.mean()) / np.sqrt(len(obs_ies) - 1)).values
+        par_ies = self.parameter_ensemble(iteration=iteration)
+        dpar = ((par_ies - par_ies.mean()) / np.sqrt(len(par_ies) - 1)).values
+        # dpar_inv = - (np.linalg.inv(dpar.T @ dpar) @ dpar.T).T
+        dpar_inv = -np.linalg.pinv(dpar).T
+        jac_ies = pd.DataFrame(dsim @ dpar_inv, index=obs_ies.index, columns=par_ies.index)
+        return jac_ies
+
     def solve(self, run_ensembles=True, **kwargs) -> None:
         """Gets the base realisation of the parameter ensemble"""
         if run_ensembles:
