@@ -425,10 +425,11 @@ class PestIesSolver(PestSolver):
                 a=0.0, b=(pmax - initial) / scale_right, loc=initial, scale=scale_right
             )
 
-            half_ies_num_reals = int(np.ceil(ies_num_reals / 2))
-            rvs_left = tnorm_left.rvs(half_ies_num_reals, random_state=seed)
-            rvs_right = tnorm_right.rvs(half_ies_num_reals, random_state=seed)
-            rvs = np.array([rvs_left, rvs_right]).flatten()[:ies_num_reals]
+            left_ies_num_reals = int(np.ceil((initial - pmin) / (pmax - pmin) * ies_num_reals))
+            right_ies_num_reals =  int(np.ceil((pmax - initial) / (pmax - pmin) * ies_num_reals))
+            rvs_left = tnorm_left.rvs(left_ies_num_reals, random_state=seed)
+            rvs_right = tnorm_right.rvs(right_ies_num_reals, random_state=seed)
+            rvs = np.append(rvs_left, rvs_right)[:ies_num_reals]
         elif method == "uniform":
             # rvs = uniform(loc=pmin, scale=pmax).rvs(ies_num_reals, random_state=pyemu.en.SEED)
             rvs = np.linspace(pmin, pmax, ies_num_reals)
