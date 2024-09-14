@@ -409,8 +409,8 @@ class PestIesSolver(PestSolver):
         par_sigma_range: float,
         method: Literal["norm", "truncnorm", "uniform"],
         seed: int = pyemu.en.SEED,
-    ):
-        if method == "normal":
+    ) -> np.array:
+        if method == "norm":
             scale = min(initial - pmin, pmax - initial) / (par_sigma_range / 2)
             rvs = norm(loc=initial, scale=scale).rvs(ies_num_reals)
             rvs[rvs < pmin] = pmin
@@ -432,7 +432,7 @@ class PestIesSolver(PestSolver):
             rvs = np.append(rvs_left, rvs_right)[:ies_num_reals]
         elif method == "uniform":
             # rvs = uniform(loc=pmin, scale=pmax).rvs(ies_num_reals, random_state=pyemu.en.SEED)
-            rvs = np.linspace(pmin, pmax, ies_num_reals)
+            rvs = np.linspace(pmin, pmax, ies_num_reals) # linspace ensures pmin and pmax are in the ensembles
             np.random.default_rng(seed=seed).shuffle(rvs)
         else:
             raise ValueError(f"{method=} should be 'norm', 'truncnorm' or 'uniform'.")
