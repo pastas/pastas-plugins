@@ -411,6 +411,8 @@ class PestIesSolver(PestSolver):
         if method == "normal":
             scale = min(initial - pmin, pmax - initial) / (par_sigma_range / 2)
             rvs = norm(loc=initial, scale=scale).rvs(ies_num_reals)
+            rvs[rvs < pmin] = pmin
+            rvs[rvs > pmax] = pmax
         elif method == "truncnorm":
             scale_left = (initial - pmin) / (par_sigma_range / 2)
             tnorm_left = truncnorm(
@@ -432,6 +434,43 @@ class PestIesSolver(PestSolver):
         else:
             raise ValueError(f"{method=} should be 'norm', 'truncnorm' or 'uniform'.")
         return rvs
+
+    @staticmethod
+    def generate_observation_noise(
+        ies_num_reals: int,
+        nobs: int,
+        standard_deviation: float,
+        rho: float = 0.0,
+        seed: int = pyemu.en.SEED
+    ) -> np.array:
+        """Generate a matrix of normally distributed noise
+
+        Parameters
+        ----------
+        ies_num_reals : int
+            Number of ensembles.
+        nobs : int
+            Number of observations (length of each noise series).
+        standard_deviation : float
+            Standard deviation of the noise.
+        rho : float, optional
+            Autoregressive coefficient. Default is 0.0 (pure white noise).
+        seed : int, optional
+            Random seed for reproducibility.
+
+        Returns
+        -------
+        np.ndarray (nobs, ies_num_reals) matrix
+        """
+        drng = np.random.default_rng(seed)
+
+        x = drng.normal(loc=0.0, scale=standard_deviation, size=(nobs, ies_num_reals))
+        if rho != 0.0:
+            sige = np.sqrt(1 - rho**2) * standard_deviation
+            e = drng.normal(loc=0.0, scale=sige, size=(nobs, ies_num_reals))
+            for j in range(1, nobs):
+                x[j] = rho * x[j - 1] + e[j]
+        return x
 
     def write_ensemble_parameter_distribution(
         self,
@@ -455,7 +494,7 @@ class PestIesSolver(PestSolver):
                 method=method,
                 seed=seed,
             )
-            seed += 1 if method == "uniform" else None
+            seed += 1 if method == "uniform" else 0
             par_df[pname] = rvs
         if ies_add_base:
             par_df.loc[ies_num_reals - 1] = pst.parameter_data.loc[:, "parval1"].values
