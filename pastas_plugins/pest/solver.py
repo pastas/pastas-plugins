@@ -163,8 +163,10 @@ class PestSolver(BaseSolver):
         ].values
         pst.parameter_data.loc[:, ["parchglim"]] = "relative"
         pst.parameter_data.loc[:, ["pargp"]] = self.par_sel.columns.to_list()
+        self.parameter_index = dict(zip(pst.parameter_data.index, self.par_sel.index))
         if obs_std > 0.0:
             pst.observation_data.loc[:, "standard_deviation"] = obs_std
+        self.observation_index = dict(zip(pst.observation_data.index, self.ml.observations.index))
         pst.control_data.noptmax = self.noptmax  # optimization runs
         if self.control_data is not None:
             for key, value in self.control_data.items():
