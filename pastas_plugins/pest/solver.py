@@ -121,7 +121,7 @@ class PestSolver(BaseSolver):
     def write_pst(self, pst: pyemu.Pst, version: int = 2) -> None:
         pst.write(self.pf.new_d / "pest.pst", version=version)
 
-    def setup_files(self, version: int = 2, obs_std: float = 0.00):
+    def setup_files(self, version: int = 2):
         """Setup PEST structure for optimization"""
         # parameters
         self.pf.add_parameters(
@@ -164,9 +164,9 @@ class PestSolver(BaseSolver):
         pst.parameter_data.loc[:, ["parchglim"]] = "relative"
         pst.parameter_data.loc[:, ["pargp"]] = self.par_sel.columns.to_list()
         self.parameter_index = dict(zip(pst.parameter_data.index, self.par_sel.index))
-        if obs_std > 0.0:
-            pst.observation_data.loc[:, "standard_deviation"] = obs_std
-        self.observation_index = dict(zip(pst.observation_data.index, self.ml.observations.index))
+        self.observation_index = dict(
+            zip(pst.observation_data.index, self.ml.observations().index)
+        )
         pst.control_data.noptmax = self.noptmax  # optimization runs
         if self.control_data is not None:
             for key, value in self.control_data.items():
@@ -322,6 +322,7 @@ class PestIesSolver(PestSolver):
         temp_ws: Union[str, Path] = Path("temp"),
         master_ws: Union[str, Path] = Path("master"),
         noptmax: int = 0,
+        ies_num_reals: int = 50,
         control_data: Optional[dict] = None,
         pcov: Optional[DataFrame] = None,
         nfev: Optional[int] = None,
@@ -340,6 +341,7 @@ class PestIesSolver(PestSolver):
         )
         self.master_ws = master_ws
         self.noptmax = noptmax
+        self.ies_num_reals = ies_num_reals
         self.control_data = control_data
         self.port_number = port_number
         self.num_workers = (
@@ -348,28 +350,35 @@ class PestIesSolver(PestSolver):
 
     def run_ensembles(
         self,
-        ies_num_reals: int = 50,
-        obs_std: float = 0.0,
         ies_add_base: bool = True,
         par_sigma_range: float = 4.0,
+        observation_noise_standard_deviation=0.0,
+        observation_noise_correlation_coefficient=0.0,
         ies_parameter_ensemble_method: Optional[
             Literal["norm", "truncnorm", "uniform"]
         ] = None,
         pestpp_options: Optional[Dict] = None,
     ) -> None:
         self.setup_model()
-        self.setup_files(obs_std=obs_std)
+        self.setup_files()
 
         # change ies_num_reals
         pst = pyemu.Pst(str(self.temp_ws / "pest.pst"))
-        pst.pestpp_options["ies_num_reals"] = ies_num_reals
+        pst.pestpp_options["ies_num_reals"] = self.ies_num_reals
         pst.pestpp_options["ies_add_base"] = ies_add_base
         pst.pestpp_options["par_sigma_range"] = par_sigma_range
-        if obs_std == 0.0:
+        if observation_noise_standard_deviation == 0.0:
             pst.pestpp_options["ies_no_noise"] = True
+        else:
+            self.write_ensemble_observation_noise(
+                standard_deviation=observation_noise_standard_deviation,
+                correlation_coefficient=observation_noise_correlation_coefficient,
+            )
+            pst.pestpp_options[
+                "ies_observation_ensemble"
+            ] = "pest_starting_obs_ensemble.csv"
         if ies_parameter_ensemble_method is not None:
             self.write_ensemble_parameter_distribution(
-                ies_num_reals=ies_num_reals,
                 method=ies_parameter_ensemble_method,
                 par_sigma_range=par_sigma_range,
                 ies_add_base=ies_add_base,
@@ -412,7 +421,9 @@ class PestIesSolver(PestSolver):
     ) -> np.array:
         if method == "norm":
             scale = min(initial - pmin, pmax - initial) / (par_sigma_range / 2)
-            rvs = norm(loc=initial, scale=scale).rvs(ies_num_reals)
+            rvs = norm(loc=initial, scale=scale).rvs(
+                size=ies_num_reals, random_state=seed
+            )
             rvs[rvs < pmin] = pmin
             rvs[rvs > pmax] = pmax
         elif method == "truncnorm":
@@ -425,14 +436,20 @@ class PestIesSolver(PestSolver):
                 a=0.0, b=(pmax - initial) / scale_right, loc=initial, scale=scale_right
             )
 
-            left_ies_num_reals = int(np.ceil((initial - pmin) / (pmax - pmin) * ies_num_reals))
-            right_ies_num_reals =  int(np.ceil((pmax - initial) / (pmax - pmin) * ies_num_reals))
-            rvs_left = tnorm_left.rvs(left_ies_num_reals, random_state=seed)
-            rvs_right = tnorm_right.rvs(right_ies_num_reals, random_state=seed)
+            left_ies_num_reals = int(
+                np.ceil((initial - pmin) / (pmax - pmin) * ies_num_reals)
+            )
+            right_ies_num_reals = int(
+                np.ceil((pmax - initial) / (pmax - pmin) * ies_num_reals)
+            )
+            rvs_left = tnorm_left.rvs(size=left_ies_num_reals, random_state=seed)
+            rvs_right = tnorm_right.rvs(size=right_ies_num_reals, random_state=seed)
             rvs = np.append(rvs_left, rvs_right)[:ies_num_reals]
         elif method == "uniform":
             # rvs = uniform(loc=pmin, scale=pmax).rvs(ies_num_reals, random_state=pyemu.en.SEED)
-            rvs = np.linspace(pmin, pmax, ies_num_reals) # linspace ensures pmin and pmax are in the ensembles
+            rvs = np.linspace(
+                pmin, pmax, ies_num_reals
+            )  # linspace ensures pmin and pmax are in the ensembles
             np.random.default_rng(seed=seed).shuffle(rvs)
         else:
             raise ValueError(f"{method=} should be 'norm', 'truncnorm' or 'uniform'.")
@@ -443,8 +460,8 @@ class PestIesSolver(PestSolver):
         ies_num_reals: int,
         nobs: int,
         standard_deviation: float,
-        rho: float = 0.0,
-        seed: int = pyemu.en.SEED
+        correlation_coefficient: float = 0.0,
+        seed: int = pyemu.en.SEED,
     ) -> np.array:
         """Generate a matrix of normally distributed noise
 
@@ -468,28 +485,27 @@ class PestIesSolver(PestSolver):
         drng = np.random.default_rng(seed)
 
         x = drng.normal(loc=0.0, scale=standard_deviation, size=(nobs, ies_num_reals))
-        if rho != 0.0:
-            sige = np.sqrt(1 - rho**2) * standard_deviation
+        if correlation_coefficient != 0.0:
+            sige = np.sqrt(1 - correlation_coefficient**2) * standard_deviation
             e = drng.normal(loc=0.0, scale=sige, size=(nobs, ies_num_reals))
             for j in range(1, nobs):
-                x[j] = rho * x[j - 1] + e[j]
+                x[j] = correlation_coefficient * x[j - 1] + e[j]
         return x
 
     def write_ensemble_parameter_distribution(
         self,
-        ies_num_reals: int,
         method: Literal["norm", "truncnorm", "uniform"] = "norm",
         par_sigma_range: float = 4.0,
         ies_add_base: bool = True,
     ):
         pst = pyemu.Pst(str(self.master_ws / "pest.pst"))
         par_df = pd.DataFrame(
-            index=pd.Index(range(ies_num_reals)), columns=pst.parameter_data.index
+            index=pd.Index(range(self.ies_num_reals)), columns=pst.parameter_data.index
         )
         seed = pyemu.en.SEED
         for pname, pdata in pst.parameter_data.iterrows():
             rvs = PestIesSolver.parameter_distribution(
-                ies_num_reals=ies_num_reals,
+                ies_num_reals=self.ies_num_reals,
                 initial=pdata.at["parval1"],
                 pmin=pdata.at["parlbnd"],
                 pmax=pdata.at["parubnd"],
@@ -500,9 +516,36 @@ class PestIesSolver(PestSolver):
             seed += 1 if method == "uniform" else 0
             par_df[pname] = rvs
         if ies_add_base:
-            par_df.loc[ies_num_reals - 1] = pst.parameter_data.loc[:, "parval1"].values
-            par_df = par_df.rename(index={ies_num_reals - 1: "base"})
+            par_df.loc[self.ies_num_reals - 1] = pst.parameter_data.loc[
+                :, "parval1"
+            ].values
+            par_df = par_df.rename(index={self.ies_num_reals - 1: "base"})
         par_df.to_csv(self.temp_ws / "pest_starting_par_ensemble.csv")
+
+    def write_ensemble_observation_noise(
+        self,
+        standard_deviation: float = 0.0,
+        correlation_coefficient: float = 0.0,
+        ies_add_base: bool = True,
+    ):
+        pst = pyemu.Pst(str(self.master_ws / "pest.pst"))
+        noise = PestIesSolver.generate_observation_noise(
+            ies_num_reals=self.ies_num_reals,
+            nobs=len(pst.observation_data.index),
+            standard_deviation=standard_deviation,
+            correlation_coefficient=correlation_coefficient,
+            seed=pyemu.en.SEED,
+        )
+        obs_data = pst.observation_data.loc[:, ["obsval"]].values
+        obs_noise_df = pd.DataFrame(
+            obs_data + noise,
+            index=pst.observation_data.index,
+            columns=pd.Index(range(self.ies_num_reals)),
+        ).transpose()
+        if ies_add_base:
+            obs_noise_df.loc[self.ies_num_reals - 1] = obs_data.flatten()
+            obs_noise_df = obs_noise_df.rename(index={self.ies_num_reals - 1: "base"})
+        obs_noise_df.to_csv(self.temp_ws / "pest_starting_obs_ensemble.csv")
 
     def parameter_ensemble(self, iteration: int = 0) -> pyemu.ParameterEnsemble:
         pst = pyemu.Pst(str(self.master_ws / "pest.pst"))
@@ -568,10 +611,12 @@ class PestIesSolver(PestSolver):
         dpar = ((par_ies - par_ies.mean()) / np.sqrt(len(par_ies) - 1)).values
         # dpar_inv = - (np.linalg.inv(dpar.T @ dpar) @ dpar.T).T
         dpar_inv = -np.linalg.pinv(dpar).T
-        jac_ies = pd.DataFrame(dsim @ dpar_inv, index=obs_ies.index, columns=par_ies.index)
+        jac_ies = pd.DataFrame(
+            dsim @ dpar_inv, index=obs_ies.index, columns=par_ies.index
+        )
         return jac_ies
 
-    def solve(self, run_ensembles=True, **kwargs) -> None:
+    def solve(self, run_ensembles: bool = False, **kwargs) -> None:
         """Gets the base realisation of the parameter ensemble"""
         if run_ensembles:
             self.run_ensembles(**kwargs)
