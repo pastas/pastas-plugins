@@ -498,7 +498,7 @@ class PestIesSolver(PestSolver):
         par_sigma_range: float = 4.0,
         ies_add_base: bool = True,
     ):
-        pst = pyemu.Pst(str(self.master_ws / "pest.pst"))
+        pst = pyemu.Pst(str(self.temp_ws / "pest.pst"))
         par_df = pd.DataFrame(
             index=pd.Index(range(self.ies_num_reals)), columns=pst.parameter_data.index
         )
@@ -528,7 +528,7 @@ class PestIesSolver(PestSolver):
         correlation_coefficient: float = 0.0,
         ies_add_base: bool = True,
     ):
-        pst = pyemu.Pst(str(self.master_ws / "pest.pst"))
+        pst = pyemu.Pst(str(self.temp_ws / "pest.pst"))
         noise = PestIesSolver.generate_observation_noise(
             ies_num_reals=self.ies_num_reals,
             nobs=len(pst.observation_data.index),
