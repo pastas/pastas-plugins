@@ -1,4 +1,5 @@
 import logging
+import json
 from functools import lru_cache
 from pathlib import Path
 from platform import node as get_computername
@@ -24,7 +25,7 @@ class PestSolver(BaseSolver):
 
     def __init__(
         self,
-        exe_name: Union[str, Path] = "pestpp",
+        exe_name: Union[str, Path],
         model_ws: Union[str, Path] = Path("model"),
         temp_ws: Union[str, Path] = Path("temp"),
         noptmax: int = 0,
@@ -34,6 +35,33 @@ class PestSolver(BaseSolver):
         long_names: bool = True,
         **kwargs,
     ) -> None:
+        """Initialize the PEST solver.
+
+        Parameters
+        ----------
+        exe_name : Union[str, Path]
+            The name or path to the PEST executable.
+        model_ws : Union[str, Path], optional
+            The model workspace directory for Pastas files. Default is "model".
+        temp_ws : Union[str, Path], optional
+            The template workspace directory for PEST files. Default is "temp".
+        noptmax : int, optional
+            The maximum number of optimization iterations. Default is 0.
+        control_data : Optional[dict], optional
+            Control data for the PEST solver. Default is None.
+        pcov : Optional[DataFrame], optional
+            The parameter covariance matrix. Default is None.
+        nfev : Optional[int], optional
+            The number of function evaluations. Default is None.
+        long_names : bool, optional
+            Whether to use long names in the PEST control file. Default is True.
+        **kwargs : dict
+            Additional keyword arguments passed to the BaseSolver.
+
+        Returns
+        -------
+        None
+        """
         BaseSolver.__init__(self, pcov=pcov, nfev=nfev, **kwargs)
         # model workspace (for pastas files)
         self.model_ws = Path(model_ws).resolve()
@@ -80,7 +108,7 @@ class PestSolver(BaseSolver):
             f.write(self.run_function)
 
     def setup_model(self):
-        """Setup and export Pastas model for optimization"""
+        """Setup and export Pastas model for PEST optimization"""
         # setup parameters
         self.ml.parameters.loc[:, "optimal"] = self.ml.parameters.loc[:, "initial"]
         self.vary = self.ml.parameters.vary.values.astype(bool)
@@ -119,10 +147,26 @@ class PestSolver(BaseSolver):
         self.write_run_function()
 
     def write_pst(self, pst: pyemu.Pst, version: int = 2) -> None:
+        """Write pest control file
+
+        Parameters
+        ----------
+        pst : pyemu.Pst
+            Pyemu pest control file object.
+        version : int, optional
+            Version of the control file, by default version 2
+        """
         pst.write(self.pf.new_d / "pest.pst", version=version)
 
     def setup_files(self, version: int = 2):
-        """Setup PEST structure for optimization"""
+        """Setup PEST file structure for optimization
+
+        Parameters
+        ----------
+        version : int, optional
+            Version of the control file, by default version 2
+        """
+
         # parameters
         self.pf.add_parameters(
             self.model_ws / "parameters_sel.csv",
@@ -163,10 +207,6 @@ class PestSolver(BaseSolver):
         ].values
         pst.parameter_data.loc[:, ["parchglim"]] = "relative"
         pst.parameter_data.loc[:, ["pargp"]] = self.par_sel.columns.to_list()
-        self.parameter_index = dict(zip(pst.parameter_data.index, self.par_sel.index))
-        self.observation_index = dict(
-            zip(pst.observation_data.index, self.ml.observations().index)
-        )
         pst.control_data.noptmax = self.noptmax  # optimization runs
         if self.control_data is not None:
             for key, value in self.control_data.items():
@@ -177,6 +217,16 @@ class PestSolver(BaseSolver):
                 else:
                     setattr(pst.control_data, key, value)
         self.write_pst(pst=pst, version=version)
+
+        # save parameter and observation index for going back and forth between pastas and pest names
+        self.parameter_index = dict(zip(pst.parameter_data.index, self.par_sel.index))
+        with (self.temp_ws / "parameter_index.json").open("w") as f:
+            json.dump(obj=self.parameter_index, fp=f, default=str)
+        self.observation_index = dict(
+            zip(pst.observation_data.index, self.ml.observations().index)
+        )
+        with (self.temp_ws / "observation_index.json").open("w") as f:
+            json.dump(obj=self.observation_index, fp=f, default=str)
 
     def run(self, arg_str: str = ""):
         pyemu.os_utils.run(
@@ -198,6 +248,32 @@ class PestGlmSolver(PestSolver):
         nfev: Optional[int] = None,
         **kwargs,
     ) -> None:
+        """
+        Initialize the PESTPP-GLM solver.
+
+        Parameters
+        ----------
+        exe_name : Union[str, Path], optional
+            The name or path to the PESTPP-GLM executable. Default is "pestpp-glm".
+        model_ws : Union[str, Path], optional
+            The model workspace directory for Pastas files. Default is "model".
+        temp_ws : Union[str, Path], optional
+            The template workspace directory for PEST files. Default is "temp".
+        noptmax : int, optional
+            The maximum number of optimization iterations. Default is 0.
+        control_data : Optional[dict], optional
+            Control data for the PEST solver. Default is None.
+        pcov : Optional[DataFrame], optional
+            The parameter covariance matrix. Default is None.
+        nfev : Optional[int], optional
+            The number of function evaluations. Default is None.
+        **kwargs : dict
+            Additional keyword arguments passed to the PestSolver.
+
+        Returns
+        -------
+        None
+        """
         PestSolver.__init__(
             self,
             exe_name=exe_name,
@@ -212,11 +288,32 @@ class PestGlmSolver(PestSolver):
         )
 
     def solve(self, **kwargs) -> Tuple[bool, np.ndarray, np.ndarray]:
+        """
+        Solves the optimization problem using the pestpp-glm solver.
+        This method sets up the model and necessary files, runs the solver, and
+        retrieves the optimal parameters, their covariance, and the objective
+        function value.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Additional keyword arguments for the solver.
+
+        Returns
+        -------
+        success : bool
+            Indicates whether the solver ran successfully.
+        optimal : np.ndarray
+            The optimal parameters obtained from the solver.
+        stderr : np.ndarray
+            The standard errors of the optimal parameters.
+        """
+
         self.setup_model()
         self.setup_files()
         self.run()
 
-        # optimal paramters
+        # optimal parameters
         ipar = pd.read_csv(self.temp_ws / "pest.ipar", index_col=0).transpose()
         ipar.index = self.ml.parameters.index[self.vary]
         optimal = self.ml.parameters["initial"].copy().values
@@ -260,6 +357,36 @@ class PestHpSolver(PestSolver):
         port_number: int = 4004,
         **kwargs,
     ) -> None:
+        """
+        Initialize the PEST_HP solver.
+
+        Parameters
+        ----------
+        exe_name : Union[str, Path], optional
+            The name or path to the PEST_HP executable. Default is "pest_hp".
+        exe_agent : Union[str, Path], optional
+            The name or path to the agent_HP executable. Default is "agent_hp".
+        model_ws : Union[str, Path], optional
+            The model workspace directory for Pastas files. Default is "model".
+        temp_ws : Union[str, Path], optional
+            The template workspace directory for PEST files. Default is "temp".
+        noptmax : int, optional
+            The maximum number of optimization iterations. Default is 0.
+        control_data : Optional[dict], optional
+            Control data for the PEST solver. Default is None.
+        pcov : Optional[DataFrame], optional
+            The parameter covariance matrix. Default is None.
+        nfev : Optional[int], optional
+            The number of function evaluations. Default is None.
+        port_number : int, optional
+            The port number for communication. Default is 4004.
+        **kwargs : dict
+            Additional keyword arguments passed to the PestSolver.
+
+        Returns
+        -------
+        None
+        """
         PestSolver.__init__(
             self,
             exe_name=exe_name,
@@ -278,6 +405,26 @@ class PestHpSolver(PestSolver):
         copy_file(self.exe_agent, self.temp_ws)  # copy agent executable
 
     def solve(self, **kwargs) -> Tuple[bool, np.ndarray, np.ndarray]:
+        """
+        Solve the optimization problem using the pest_hp solver.
+
+        This method sets up the model and necessary files, runs the solver, and
+        retrieves the optimal parameters and the objective function value.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Additional keyword arguments for the solver.
+
+        Returns
+        -------
+        success : bool
+            Indicates whether the solver ran successfully.
+        optimal : np.ndarray
+            The optimal parameters obtained from the solver.
+        stderr : np.ndarray
+            The standard errors of the optimal parameters.
+        """
         self.setup_model()
         self.setup_files(version=1)
         # start consecutive thread for pest_hp and agent_hp excutable
@@ -302,9 +449,18 @@ class PestHpSolver(PestSolver):
         self.nfev = ofr.index[-1]
         self.obj_func = ofr.at[self.nfev, "total"]
 
-        return True, optimal, np.full_like(optimal, np.nan)
+        # TODO: Obtain stderror from pest.hp output and covariance matrix
+        stderr = np.full_like(optimal, np.nan)
+        return True, optimal, stderr
 
     def run_agent(self):
+        """
+        Executes the agent using the specified executable and configuration.
+        This method runs the agent with the given executable name, pest control file,
+        and host configuration (computer name and port number). The execution is done
+        in the directory specified by `self.pf.new_d`.
+        """
+
         pyemu.os_utils.run(
             f"{self.exe_agent.name} pest.pst /h {self.computername}:{self.port_number}",
             cwd=self.pf.new_d,
@@ -316,6 +472,7 @@ class PestIesSolver(PestSolver):
     """PESTPP-IES (Iterative Ensemble Smoother) solver"""
 
     def __init__(
+
         self,
         exe_name: Union[str, Path] = "pestpp-ies",
         model_ws: Union[str, Path] = Path("model"),
@@ -330,6 +487,41 @@ class PestIesSolver(PestSolver):
         num_workers: Optional[int] = None,
         **kwargs,
     ) -> None:
+        """
+        Initialize the PESTPP-iES solver.
+
+        Parameters
+        ----------
+        exe_name : Union[str, Path], optional
+            The name of the executable to run, by default "pestpp-ies".
+        model_ws : Union[str, Path], optional
+            The working directory for the model, by default Path("model").
+        temp_ws : Union[str, Path], optional
+            The temporary working directory, by default Path("temp").
+        master_ws : Union[str, Path], optional
+            The master working directory, by default Path("master").
+        noptmax : int, optional
+            The maximum number of optimization iterations, by default 0.
+        ies_num_reals : int, optional
+            The number of realizations to draw in order to form parameter and observation ensembles, by default 50.
+        control_data : Optional[dict], optional
+            Additional control data for the solver, by default None.
+        pcov : Optional[DataFrame], optional
+            The parameter covariance matrix, by default None.
+        nfev : Optional[int], optional
+            The number of function evaluations, by default None.
+        port_number : int, optional
+            The port number for communication, by default 4004.
+        num_workers : Optional[int], optional
+            The number of worker processes, by default the number of physical CPU cores.
+        **kwargs
+            Additional keyword arguments passed to the base class initializer.
+
+        Returns
+        -------
+        None
+        """
+
         PestSolver.__init__(
             self,
             exe_name=exe_name,
@@ -359,6 +551,30 @@ class PestIesSolver(PestSolver):
         ] = None,
         pestpp_options: Optional[Dict] = None,
     ) -> None:
+        """
+        Run ensemble simulations using pestpp-ies.
+
+        Parameters
+        ----------
+        ies_add_base : bool, optional
+            Whether to add the base parameter set to the ensemble, by default
+            True. The base ensemble uses the initial parameter values as
+            provided by Pastas and does not add noise on the observations.
+        par_sigma_range : float, optional
+            The difference between a parameters upper and lower bounds
+            expressed as standard deviations, by default 4.0.
+        observation_noise_standard_deviation : float, optional
+            The standard deviation of the observation noise, by default 0.0.
+        observation_noise_correlation_coefficient : float, optional
+            The correlation coefficient of the observation noise, by default 0.0.
+        ies_parameter_ensemble_method : Optional[Literal["norm", "truncnorm", "uniform"]], optional
+            The method to distribution of the prior for the parameter ensemble, by default None.
+        pestpp_options : Optional[Dict], optional
+            Additional PEST++ options, by default None.
+        Returns
+        -------
+        None
+        """
         self.setup_model()
         self.setup_files()
 
@@ -419,6 +635,32 @@ class PestIesSolver(PestSolver):
         method: Literal["norm", "truncnorm", "uniform"],
         seed: int = pyemu.en.SEED,
     ) -> np.array:
+        """Generate a distribution of parameter values based on the specified method.
+
+        Parameters
+        ----------
+        ies_num_reals : int
+            Number of ensembles/realizations.
+        initial : float
+            Initial parameter value.
+        pmin : float
+            Minimum parameter value.
+        pmax : float
+            Maximum parameter value.
+        par_sigma_range : float
+            Range for the parameter sigma.
+        method : {'norm', 'truncnorm', 'uniform'}
+            Method to use for generating the distribution. 'norm' generates a
+            normal distribution, 'truncnorm' generates a truncated normal
+            distribution, and 'uniform' generates a uniform distribution.
+        seed : int, optional
+            Random seed for reproducibility, by default pyemu.en.SEED.
+
+        Returns
+        -------
+        np.array
+            Array of generated parameter values.
+        """
         if method == "norm":
             scale = min(initial - pmin, pmax - initial) / (par_sigma_range / 2)
             rvs = norm(loc=initial, scale=scale).rvs(
@@ -445,6 +687,8 @@ class PestIesSolver(PestSolver):
             rvs_left = tnorm_left.rvs(size=left_ies_num_reals, random_state=seed)
             rvs_right = tnorm_right.rvs(size=right_ies_num_reals, random_state=seed)
             rvs = np.append(rvs_left, rvs_right)[:ies_num_reals]
+            rvs[rvs < pmin] = pmin
+            rvs[rvs > pmax] = pmax
         elif method == "uniform":
             # rvs = uniform(loc=pmin, scale=pmax).rvs(ies_num_reals, random_state=pyemu.en.SEED)
             rvs = np.linspace(
@@ -463,12 +707,12 @@ class PestIesSolver(PestSolver):
         correlation_coefficient: float = 0.0,
         seed: int = pyemu.en.SEED,
     ) -> np.array:
-        """Generate a matrix of normally distributed noise
+        """Generate a matrix of normally distributed and optionally correlated noise
 
         Parameters
         ----------
         ies_num_reals : int
-            Number of ensembles.
+            Number of ensembles/realizations.
         nobs : int
             Number of observations (length of each noise series).
         standard_deviation : float
@@ -476,7 +720,7 @@ class PestIesSolver(PestSolver):
         rho : float, optional
             Autoregressive coefficient. Default is 0.0 (pure white noise).
         seed : int, optional
-            Random seed for reproducibility.
+            Random seed for reproducibility, by default pyemu.en.SEED.
 
         Returns
         -------
@@ -497,7 +741,28 @@ class PestIesSolver(PestSolver):
         method: Literal["norm", "truncnorm", "uniform"] = "norm",
         par_sigma_range: float = 4.0,
         ies_add_base: bool = True,
-    ):
+    ) -> None:
+        """
+        Generate and write an ensemble of parameter distributions to a CSV file.
+
+        Parameters
+        ----------
+        method : Literal["norm", "truncnorm", "uniform"], optional
+            The method to use for generating the parameter distribution.
+            Options are "norm" for normal distribution, "truncnorm" for
+            truncated normal distribution, and "uniform" for uniform
+            distribution. Default is "norm".
+        par_sigma_range : float, optional
+            The range of the parameter sigma for the distribution. Default is
+            4.0.
+        ies_add_base : bool, optional
+            If True, add the base parameter values to the ensemble. Default is
+            True.
+
+        Returns
+        -------
+        None
+        """
         pst = pyemu.Pst(str(self.temp_ws / "pest.pst"))
         par_df = pd.DataFrame(
             index=pd.Index(range(self.ies_num_reals)), columns=pst.parameter_data.index
@@ -528,6 +793,24 @@ class PestIesSolver(PestSolver):
         correlation_coefficient: float = 0.0,
         ies_add_base: bool = True,
     ):
+        """
+        Generate and write an ensemble of observation noise to a CSV file.
+
+        Parameters
+        ----------
+        standard_deviation : float, optional
+            The standard deviation of the observation noise. Default is 0.0.
+        correlation_coefficient : float, optional
+            The correlation coefficient of the observation noise. Default is
+            0.0.
+        ies_add_base : bool, optional
+            If True, add the base observation values to the ensemble. Default
+            is True.
+
+        Returns
+        -------
+        None
+        """
         pst = pyemu.Pst(str(self.temp_ws / "pest.pst"))
         noise = PestIesSolver.generate_observation_noise(
             ies_num_reals=self.ies_num_reals,
@@ -548,6 +831,21 @@ class PestIesSolver(PestSolver):
         obs_noise_df.to_csv(self.temp_ws / "pest_starting_obs_ensemble.csv")
 
     def parameter_ensemble(self, iteration: int = 0) -> pyemu.ParameterEnsemble:
+        """
+        Read a parameter ensemble for a given iteration.
+
+        Parameters:
+        -----------
+        iteration : int, optional
+            The iteration number for which to read the parameter ensemble.
+            Default is 0.
+
+        Returns:
+        --------
+        pyemu.ParameterEnsemble
+            The parameter ensemble for the specified iteration.
+        """
+
         pst = pyemu.Pst(str(self.master_ws / "pest.pst"))
         pe = pyemu.ParameterEnsemble.from_csv(
             pst=pst, filename=self.master_ws / f"pest.{iteration}.par.csv"
@@ -562,6 +860,30 @@ class PestIesSolver(PestSolver):
         tmin: TimestampType = None,
         tmax: TimestampType = None,
     ) -> pd.DataFrame:
+        """
+        Generate or read a simulation ensemble.
+
+        Parameters
+        ----------
+        iteration : int, optional
+            The iteration number for which to read the simulation ensemble.
+            Default is 0.
+        from_file : bool, optional
+            If True, read the simulation ensemble from a file. If False,
+            generate it with Pastas from the parameter ensemble. Default is
+            False.
+        tmin : TimestampType, optional
+            The minimum timestamp for the simulation period. If None, use the
+            model's tmin setting. Default is None.
+        tmax : TimestampType, optional
+            The maximum timestamp for the simulation period. If None, use the
+            model's tmax setting. Default is None.
+
+        Returns
+        -------
+        pd.DataFrame
+            The simulation ensemble as a DataFrame.
+        """
         if from_file:
             pst = pyemu.Pst(str(self.master_ws / "pest.pst"))
             se = (
@@ -597,6 +919,17 @@ class PestIesSolver(PestSolver):
         return se
 
     def observation_ensemble(self) -> pyemu.ObservationEnsemble:
+        """
+        Generate an observation ensemble from a CSV file. This method reads a
+        PEST control file and a corresponding observation noise CSV file to
+        create an observation ensemble.
+
+        Returns
+        -------
+        pyemu.ObservationEnsemble
+            The generated observation ensemble.
+        """
+
         pst = pyemu.Pst(str(self.master_ws / "pest.pst"))
         oe = pyemu.ObservationEnsemble.from_csv(
             pst=pst, filename=self.master_ws / "pest.obs+noise.csv"
@@ -604,6 +937,26 @@ class PestIesSolver(PestSolver):
         return oe
 
     def jacobian(self, iteration: int = 0) -> pd.DataFrame:
+        """
+        Calculate the Jacobian matrix for the given iteration.
+        The Jacobian matrix is computed using the simulation ensemble and
+        parameter ensemble for the specified iteration. The calculation
+        involves normalizing the ensembles and using the pseudo-inverse
+        of the parameter ensemble.
+
+        Parameters:
+        -----------
+        iteration : int, optional
+            The iteration number for which the Jacobian is calculated.
+            Default is 0.
+
+        Returns:
+        --------
+        pd.DataFrame
+            A DataFrame representing the Jacobian matrix, with the same
+            indices as the observation ensemble and the same columns as
+            the parameter ensemble.
+        """
         # jac_ies needs to be calculated manually
         obs_ies = self.simulation_ensemble(iteration=iteration, from_file=True)
         dsim = ((obs_ies - obs_ies.mean()) / np.sqrt(len(obs_ies) - 1)).values
@@ -616,8 +969,25 @@ class PestIesSolver(PestSolver):
         )
         return jac_ies
 
-    def solve(self, run_ensembles: bool = False, **kwargs) -> None:
-        """Gets the base realisation of the parameter ensemble"""
+    def solve(self, run_ensembles: bool = False, **kwargs) -> Tuple[bool, np.ndarray, np.ndarray]:
+        """
+        Gets the base realization of the parameter ensemble.
+
+        Parameters
+        ----------
+        run_ensembles : bool, optional
+            If True, runs the ensembles with the provided keyword arguments (default is False).
+        **kwargs : dict
+            Additional keyword arguments to pass to the `run_ensembles` method.
+
+        Returns
+        -------
+        tuple
+            A tuple containing:
+            - bool: Always returns True.
+            - numpy.ndarray: The optimal parameters.
+            - numpy.ndarray: The standard error of the parameters.
+        """
         if run_ensembles:
             self.run_ensembles(**kwargs)
 
@@ -651,6 +1021,39 @@ class PestSenSolver(PestSolver):
         num_workers: Optional[int] = None,
         **kwargs,
     ) -> None:
+        """
+        Initialize the PESTPP-SEN class. This class is used to run the
+        PESTPP-SEN analysis and is not really a solver.
+
+        Parameters
+        ----------
+        exe_name : Union[str, Path], optional
+            The name of the executable to run, by default "pestpp-sen".
+        model_ws : Union[str, Path], optional
+            The working directory for the model, by default Path("model").
+        temp_ws : Union[str, Path], optional
+            The temporary working directory, by default Path("temp").
+        master_ws : Union[str, Path], optional
+            The master working directory, by default Path("master").
+        noptmax : int, optional
+            The maximum number of optimization iterations, by default 0.
+        control_data : Optional[dict], optional
+            Control data for the solver, by default None.
+        pcov : Optional[DataFrame], optional
+            The parameter covariance matrix, by default None.
+        nfev : Optional[int], optional
+            The number of function evaluations, by default None.
+        port_number : int, optional
+            The port number for communication, by default 4004.
+        num_workers : Optional[int], optional
+            The number of worker processes, by default the number of physical CPU cores.
+        **kwargs
+            Additional keyword arguments.
+
+        Returns
+        -------
+        None
+        """
         PestSolver.__init__(
             self,
             exe_name=exe_name,
@@ -672,6 +1075,22 @@ class PestSenSolver(PestSolver):
         self,
         pestpp_options: Optional[Dict] = None,
     ) -> None:
+        """
+        Start the PESTPP-SEN analysis.
+
+        This method sets up the model and files, updates the PEST control file with
+        the provided PEST++ options, and starts the PESTPP-SEN workers.
+
+        Parameters
+        ----------
+        pestpp_options : Optional[Dict], optional
+            Additional PEST++ options to update in the PEST control file, by default None.
+
+        Returns
+        -------
+        None
+        """
+
         self.setup_model()
         self.setup_files()
 
@@ -690,4 +1109,10 @@ class PestSenSolver(PestSolver):
             worker_root=self.master_ws.parent,  # where to deploy the agent directories; relative to where python is running
             port=self.port_number,  # the port to use for communication
             master_dir=self.master_ws,  # the manager directory
+        )
+
+    def solve() -> None:
+        raise NotImplementedError(
+            "PestSenSolver does not have a solve method. Run the sensitivity"
+            "analysis using the `start` method."
         )
