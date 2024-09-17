@@ -219,7 +219,7 @@ class PestSolver(BaseSolver):
         self.write_pst(pst=pst, version=version)
 
         # save parameter and observation index for going back and forth between pastas and pest names
-        self.parameter_index = dict(zip(pst.parameter_data.index, self.par_sel.index))
+        self.parameter_index = dict(zip(pst.parameter_data.index, self.ml.parameters[self.vary].index))
         with (self.temp_ws / "parameter_index.json").open("w") as f:
             json.dump(obj=self.parameter_index, fp=f, default=str)
         self.observation_index = dict(
@@ -959,13 +959,13 @@ class PestIesSolver(PestSolver):
         """
         # jac_ies needs to be calculated manually
         obs_ies = self.simulation_ensemble(iteration=iteration, from_file=True)
-        dsim = ((obs_ies - obs_ies.mean()) / np.sqrt(len(obs_ies) - 1)).values
+        dsim = ((obs_ies - obs_ies.mean()) / np.sqrt(len(obs_ies.columns) - 1)).values
         par_ies = self.parameter_ensemble(iteration=iteration)
-        dpar = ((par_ies - par_ies.mean()) / np.sqrt(len(par_ies) - 1)).values
+        dpar = ((par_ies - par_ies.mean()) / np.sqrt(len(par_ies.index) - 1)).values
         # dpar_inv = - (np.linalg.inv(dpar.T @ dpar) @ dpar.T).T
         dpar_inv = -np.linalg.pinv(dpar).T
         jac_ies = pd.DataFrame(
-            dsim @ dpar_inv, index=obs_ies.index, columns=par_ies.index
+            dsim @ dpar_inv, index=obs_ies.index, columns=par_ies.columns
         )
         return jac_ies
 
