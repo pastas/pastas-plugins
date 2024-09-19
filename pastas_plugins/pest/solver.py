@@ -1,5 +1,5 @@
-import logging
 import json
+import logging
 from functools import lru_cache
 from pathlib import Path
 from platform import node as get_computername
@@ -219,7 +219,9 @@ class PestSolver(BaseSolver):
         self.write_pst(pst=pst, version=version)
 
         # save parameter and observation index for going back and forth between pastas and pest names
-        self.parameter_index = dict(zip(pst.parameter_data.index, self.ml.parameters[self.vary].index))
+        self.parameter_index = dict(
+            zip(pst.parameter_data.index, self.ml.parameters[self.vary].index)
+        )
         with (self.temp_ws / "parameter_index.json").open("w") as f:
             json.dump(obj=self.parameter_index, fp=f, default=str)
         self.observation_index = dict(
@@ -472,7 +474,6 @@ class PestIesSolver(PestSolver):
     """PESTPP-IES (Iterative Ensemble Smoother) solver"""
 
     def __init__(
-
         self,
         exe_name: Union[str, Path] = "pestpp-ies",
         model_ws: Union[str, Path] = Path("model"),
@@ -958,18 +959,54 @@ class PestIesSolver(PestSolver):
             the parameter ensemble.
         """
         # jac_ies needs to be calculated manually
-        obs_ies = self.simulation_ensemble(iteration=iteration, from_file=True)
-        dsim = ((obs_ies - obs_ies.mean()) / np.sqrt(len(obs_ies.columns) - 1)).values
+        obs_ies = self.simulation_ensemble(
+            iteration=iteration, from_file=True
+        ).transpose()
         par_ies = self.parameter_ensemble(iteration=iteration)
-        dpar = ((par_ies - par_ies.mean()) / np.sqrt(len(par_ies.index) - 1)).values
-        # dpar_inv = - (np.linalg.inv(dpar.T @ dpar) @ dpar.T).T
-        dpar_inv = -np.linalg.pinv(dpar).T
-        jac_ies = pd.DataFrame(
-            dsim @ dpar_inv, index=obs_ies.index, columns=par_ies.columns
-        )
+        jac = PestIesSolver.jacobian_emperical(obs_ies.values, par_ies.values)
+        jac_ies = pd.DataFrame(jac, index=obs_ies.index, columns=par_ies.columns)
         return jac_ies
 
-    def solve(self, run_ensembles: bool = False, **kwargs) -> Tuple[bool, np.ndarray, np.ndarray]:
+    @staticmethod
+    def jacobian_emperical(
+        simulation_ensembles: np.ndarray, parameter_ensembles: np.ndarray
+    ) -> np.ndarray:
+        """Calculate the approximate Jacobian matrix for the given ensembles.
+
+        Parameters
+        ----------
+        simulation_ensembles : np.ndarray
+            Ensembles of the simulated values of shape (nobs, nreals)
+        parameter_ensembles : np.ndarray
+            Ensembles of the paramters of shape (nreals, npar)
+
+        Returns
+        -------
+        np.ndarray
+            Approximate, empirical Jacobian matrix
+        """
+        _, ies_num_reals_sim = simulation_ensembles.shape
+        ies_num_reals_par, _ = parameter_ensembles.shape
+        if ies_num_reals_par != ies_num_reals_sim:
+            raise AssertionError(
+                f"Number of realizations in parameter {ies_num_reals_par} and"
+                f"simulation {ies_num_reals_sim} ensembles must be equal"
+            )
+        else:
+            ies_num_reals = ies_num_reals_sim
+
+        deviations_sim = (
+            simulation_ensembles.T - np.mean(simulation_ensembles, axis=1)
+        ).T / np.sqrt(ies_num_reals - 1)
+        deviations_par = (
+            parameter_ensembles - np.mean(parameter_ensembles, axis=0)
+        ).T / np.sqrt(ies_num_reals - 1)
+        jac = deviations_sim @ np.linalg.pinv(deviations_par)
+        return jac
+
+    def solve(
+        self, run_ensembles: bool = False, **kwargs
+    ) -> Tuple[bool, np.ndarray, np.ndarray]:
         """
         Gets the base realization of the parameter ensemble.
 
