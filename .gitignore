@@ -166,3 +166,5 @@ cython_debug/
 /docs/examples/pestf_hp
 /docs/examples/pestf_ies
 /docs/examples/pestf_sen
+/docs/examples/template
+/docs/examples/model
