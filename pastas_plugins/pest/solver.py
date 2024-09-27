@@ -230,9 +230,9 @@ class PestSolver(BaseSolver):
         with (self.temp_ws / "observation_index.json").open("w") as f:
             json.dump(obj=self.observation_index, fp=f, default=str)
 
-    def run(self, arg_str: str = ""):
+    def run(self, arg_str: str = "", silent: bool = False):
         pyemu.os_utils.run(
-            f"{self.exe_name.name} pest.pst{arg_str}", cwd=self.pf.new_d, verbose=True
+            f"{self.exe_name.name} pest.pst{arg_str}", cwd=self.pf.new_d, verbose=silent
         )
 
 
@@ -406,7 +406,7 @@ class PestHpSolver(PestSolver):
         self.computername = get_computername()
         copy_file(self.exe_agent, self.temp_ws)  # copy agent executable
 
-    def solve(self, **kwargs) -> Tuple[bool, np.ndarray, np.ndarray]:
+    def solve(self, silent: bool = False, **kwargs) -> Tuple[bool, np.ndarray, np.ndarray]:
         """
         Solve the optimization problem using the pest_hp solver.
 
@@ -431,8 +431,8 @@ class PestHpSolver(PestSolver):
         self.setup_files(version=1)
         # start consecutive thread for pest_hp and agent_hp excutable
         threads = [
-            Thread(target=self.run, args=(f" /h :{self.port_number}",)),
-            Thread(target=self.run_agent),
+            Thread(target=self.run, args=(f" /h :{self.port_number}", silent)),
+            Thread(target=self.run_agent, args=(silent,)),
         ]
         for t in threads:
             t.start()
@@ -455,7 +455,7 @@ class PestHpSolver(PestSolver):
         stderr = np.full_like(optimal, np.nan)
         return True, optimal, stderr
 
-    def run_agent(self):
+    def run_agent(self, silent: bool = False):
         """
         Executes the agent using the specified executable and configuration.
         This method runs the agent with the given executable name, pest control file,
@@ -466,7 +466,7 @@ class PestHpSolver(PestSolver):
         pyemu.os_utils.run(
             f"{self.exe_agent.name} pest.pst /h {self.computername}:{self.port_number}",
             cwd=self.pf.new_d,
-            verbose=True,
+            verbose=silent,
         )
 
 
@@ -551,6 +551,7 @@ class PestIesSolver(PestSolver):
             Literal["norm", "truncnorm", "uniform"]
         ] = None,
         pestpp_options: Optional[Dict] = None,
+        silent: bool = False,
     ) -> None:
         """
         Run ensemble simulations using pestpp-ies.
@@ -617,6 +618,8 @@ class PestIesSolver(PestSolver):
             worker_root=self.master_ws.parent,  # where to deploy the agent directories; relative to where python is running
             port=self.port_number,  # the port to use for communication
             master_dir=self.master_ws,  # the manager directory
+            verbose=silent,
+            silent_master=silent,
         )
 
         phidf = pd.read_csv(self.master_ws / "pest.phi.meas.csv", index_col=0)
@@ -779,7 +782,7 @@ class PestIesSolver(PestSolver):
                 method=method,
                 seed=seed,
             )
-            seed += 1 if method == "uniform" else 0
+            seed += 1
             par_df[pname] = rvs
         if ies_add_base:
             par_df.loc[self.ies_num_reals - 1] = pst.parameter_data.loc[
@@ -1111,6 +1114,7 @@ class PestSenSolver(PestSolver):
     def start(
         self,
         pestpp_options: Optional[Dict] = None,
+        silent: bool = False
     ) -> None:
         """
         Start the PESTPP-SEN analysis.
@@ -1146,6 +1150,8 @@ class PestSenSolver(PestSolver):
             worker_root=self.master_ws.parent,  # where to deploy the agent directories; relative to where python is running
             port=self.port_number,  # the port to use for communication
             master_dir=self.master_ws,  # the manager directory
+            verbose=silent,
+            silent_master=silent,
         )
 
     def solve() -> None:
