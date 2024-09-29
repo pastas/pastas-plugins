@@ -406,7 +406,9 @@ class PestHpSolver(PestSolver):
         self.computername = get_computername()
         copy_file(self.exe_agent, self.temp_ws)  # copy agent executable
 
-    def solve(self, silent: bool = False, **kwargs) -> Tuple[bool, np.ndarray, np.ndarray]:
+    def solve(
+        self, silent: bool = False, **kwargs
+    ) -> Tuple[bool, np.ndarray, np.ndarray]:
         """
         Solve the optimization problem using the pest_hp solver.
 
@@ -571,6 +573,7 @@ class PestIesSolver(PestSolver):
             The correlation coefficient of the observation noise, by default 0.0.
         ies_parameter_ensemble_method : Optional[Literal["norm", "truncnorm", "uniform"]], optional
             The method to distribution of the prior for the parameter ensemble, by default None.
+            If None the parameter distribution is drwan by pestpp-ies itself.
         pestpp_options : Optional[Dict], optional
             Additional PEST++ options, by default None.
         Returns
@@ -637,8 +640,7 @@ class PestIesSolver(PestSolver):
         pmax: float,
         par_sigma_range: float,
         method: Literal["norm", "truncnorm", "uniform"],
-        seed: int = pyemu.en.SEED,
-    ) -> np.array:
+    ) -> np.ndarray[float]:
         """Generate a distribution of parameter values based on the specified method.
 
         Parameters
@@ -657,8 +659,6 @@ class PestIesSolver(PestSolver):
             Method to use for generating the distribution. 'norm' generates a
             normal distribution, 'truncnorm' generates a truncated normal
             distribution, and 'uniform' generates a uniform distribution.
-        seed : int, optional
-            Random seed for reproducibility, by default pyemu.en.SEED.
 
         Returns
         -------
@@ -667,9 +667,7 @@ class PestIesSolver(PestSolver):
         """
         if method == "norm":
             scale = min(initial - pmin, pmax - initial) / (par_sigma_range / 2)
-            rvs = norm(loc=initial, scale=scale).rvs(
-                size=ies_num_reals, random_state=seed
-            )
+            rvs = np.sort(norm(loc=initial, scale=scale).rvs(size=ies_num_reals))
             rvs[rvs < pmin] = pmin
             rvs[rvs > pmax] = pmax
         elif method == "truncnorm":
@@ -688,17 +686,15 @@ class PestIesSolver(PestSolver):
             right_ies_num_reals = int(
                 np.ceil((pmax - initial) / (pmax - pmin) * ies_num_reals)
             )
-            rvs_left = tnorm_left.rvs(size=left_ies_num_reals, random_state=seed)
-            rvs_right = tnorm_right.rvs(size=right_ies_num_reals, random_state=seed)
-            rvs = np.append(rvs_left, rvs_right)[:ies_num_reals]
+            rvs_left = tnorm_left.rvs(size=left_ies_num_reals)
+            rvs_right = tnorm_right.rvs(size=right_ies_num_reals)
+            rvs = np.sort(np.append(rvs_left, rvs_right)[:ies_num_reals])
             rvs[rvs < pmin] = pmin
             rvs[rvs > pmax] = pmax
         elif method == "uniform":
-            # rvs = uniform(loc=pmin, scale=pmax).rvs(ies_num_reals, random_state=pyemu.en.SEED)
             rvs = np.linspace(
-                pmin, pmax, ies_num_reals
+                start=pmin, stop=pmax, num=ies_num_reals
             )  # linspace ensures pmin and pmax are in the ensembles
-            np.random.default_rng(seed=seed).shuffle(rvs)
         else:
             raise ValueError(f"{method=} should be 'norm', 'truncnorm' or 'uniform'.")
         return rvs
@@ -710,7 +706,7 @@ class PestIesSolver(PestSolver):
         standard_deviation: float,
         correlation_coefficient: float = 0.0,
         seed: int = pyemu.en.SEED,
-    ) -> np.array:
+    ) -> np.ndarray[float]:
         """Generate a matrix of normally distributed and optionally correlated noise
 
         Parameters
@@ -745,6 +741,7 @@ class PestIesSolver(PestSolver):
         method: Literal["norm", "truncnorm", "uniform"] = "norm",
         par_sigma_range: float = 4.0,
         ies_add_base: bool = True,
+        seed: int = pyemu.en.SEED,
     ) -> None:
         """
         Generate and write an ensemble of parameter distributions to a CSV file.
@@ -762,6 +759,8 @@ class PestIesSolver(PestSolver):
         ies_add_base : bool, optional
             If True, add the base parameter values to the ensemble. Default is
             True.
+        seed : int, optional
+            Random seed for reproducibility, by default pyemu.en.SEED.
 
         Returns
         -------
@@ -771,7 +770,6 @@ class PestIesSolver(PestSolver):
         par_df = pd.DataFrame(
             index=pd.Index(range(self.ies_num_reals)), columns=pst.parameter_data.index
         )
-        seed = pyemu.en.SEED
         for pname, pdata in pst.parameter_data.iterrows():
             rvs = PestIesSolver.parameter_distribution(
                 ies_num_reals=self.ies_num_reals,
@@ -780,10 +778,12 @@ class PestIesSolver(PestSolver):
                 pmax=pdata.at["parubnd"],
                 par_sigma_range=par_sigma_range,
                 method=method,
-                seed=seed,
             )
-            seed += 1
             par_df[pname] = rvs
+        # shuffle each column with the initial parameters independently
+        par_df.loc[:, :] = np.random.default_rng(seed=seed).permuted(
+            par_df.values, axis=0
+        )
         if ies_add_base:
             par_df.loc[self.ies_num_reals - 1] = pst.parameter_data.loc[
                 :, "parval1"
@@ -1112,9 +1112,7 @@ class PestSenSolver(PestSolver):
         )
 
     def start(
-        self,
-        pestpp_options: Optional[Dict] = None,
-        silent: bool = False
+        self, pestpp_options: Optional[Dict] = None, silent: bool = False
     ) -> None:
         """
         Start the PESTPP-SEN analysis.
