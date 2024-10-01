@@ -1,5 +1,5 @@
 from logging import getLogger
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 from pandas import Series
 from pastas.stressmodels import StressModelBase
@@ -16,7 +16,8 @@ class ModflowModel(StressModelBase):
 
     def __init__(
         self,
-        stress: List[Series],
+        prec: Series,
+        evap: Series,
         modflow: Modflow,
         name: str,
         settings: Optional[Tuple[Union[str, dict], Union[str, dict]]] = (
@@ -24,39 +25,30 @@ class ModflowModel(StressModelBase):
             "evap",
         ),
         metadata: Optional[Tuple[dict, dict]] = (None, None),
-        meanstress: Optional[float] = None,
     ) -> None:
         # Set resevoir object
         self.modflow = modflow
 
         # Code below is copied from StressModel2 and may not be optimal
         # Check the series, then determine tmin and tmax
-        stress0 = TimeSeries(stress[0], settings=settings[0], metadata=metadata[0])
-        stress1 = TimeSeries(stress[1], settings=settings[1], metadata=metadata[1])
+        self.prec = TimeSeries(prec, settings=settings[0], metadata=metadata[0])
+        self.evap = TimeSeries(evap, settings=settings[1], metadata=metadata[1])
 
         # Select indices from validated stress where both series are available.
-        index = stress0.series.index.intersection(stress1.series.index)
+        index = self.prec.series.index.intersection(self.evap.series.index)
         if index.empty:
             msg = (
-                "The two stresses that were provided have no "
-                "overlapping time indices. Please make sure the "
-                "indices of the time series overlap."
+                "The stresses that were provided have no overlapping time indices. "
+                "Please make sure the indices of the time series overlap."
             )
             logger.error(msg)
             raise Exception(msg)
 
-        # First check the series, then determine tmin and tmax
-        stress0.update_series(tmin=index.min(), tmax=index.max())
-        stress1.update_series(tmin=index.min(), tmax=index.max())
-
-        if meanstress is None:
-            meanstress = (stress0.series - stress1.series).std()
-
         StressModelBase.__init__(self, name=name, tmin=index.min(), tmax=index.max())
-        self.stress.append(stress0)
-        self.stress.append(stress1)
 
-        self.freq = stress0.settings["freq"]
+        self.stress = [self.prec, self.evap]
+
+        self.freq = self.prec.settings["freq"]
         self.set_init_parameters()
 
     def set_init_parameters(self) -> None:

@@ -38,10 +38,12 @@ class ModflowRch:
         self.raise_on_modflow_error = raise_on_modflow_error
 
     def get_init_parameters(self, name: str) -> DataFrame:
-        parameters = DataFrame(columns=["initial", "pmin", "pmax", "vary", "name"])
-        parameters.loc[name + "_sy"] = (0.05, 0.001, 0.5, True, name)
-        parameters.loc[name + "_c"] = (220, 1e1, 1e8, True, name)
-        parameters.loc[name + "_f"] = (-1.0, -2.0, 0.0, True, name)
+        parameters = DataFrame(
+            columns=["initial", "pmin", "pmax", "vary", "name", "dist"]
+        )
+        parameters.loc[name + "_s"] = (0.05, 0.001, 0.5, True, name, "uniform")
+        parameters.loc[name + "_c"] = (220, 1e1, 1e8, True, name, "uniform")
+        parameters.loc[name + "_f"] = (-1.0, -2.0, 0.0, True, name, "uniform")
         return parameters
 
     def create_model(self) -> None:
@@ -108,10 +110,10 @@ class ModflowRch:
         self._gwf = gwf
 
     def update_model(self, p: ArrayLike):
-        sy, c, f = p[0:3]
+        s, c, f = p[0:3]
 
         d = 0.0
-        r = self._stress[0] + f * self._stress[1]
+        rech = self._stress[0] + f * self._stress[1]
 
         # remove existing packages
         if all(
@@ -124,7 +126,7 @@ class ModflowRch:
             self._gwf,
             save_flows=False,
             iconvert=0,
-            ss=sy / haq,
+            ss=s / haq,
             transient=True,
             pname="sto",
         )
@@ -139,7 +141,7 @@ class ModflowRch:
         )
         ghb.write()
 
-        rts = [(i, x) for i, x in zip(range(self._nper + 1), np.append(r, 0.0))]
+        rts = [(i, x) for i, x in zip(range(self._nper + 1), np.append(rech, 0.0))]
 
         ts_dict = {
             "filename": "recharge.ts",
@@ -169,7 +171,7 @@ class ModflowRch:
         else:
             logger.error(
                 "ModflowError: model run failed with parameters: "
-                f"sy={p[0]}, c={p[1]}, f={p[2]}"
+                f"s={p[0]}, c={p[1]}, f={p[2]}"
             )
             if self.raise_on_modflow_error:
                 raise Exception(
