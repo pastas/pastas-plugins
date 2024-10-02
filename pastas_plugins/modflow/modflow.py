@@ -1,6 +1,6 @@
 import functools
 import logging
-from typing import List, Protocol
+from typing import List
 
 import flopy
 import numpy as np
@@ -10,43 +10,25 @@ from pastas.typing import ArrayLike
 logger = logging.getLogger(__name__)
 
 
-class Modflow(Protocol):
-    def __init__(self) -> None: ...
-
-    def get_init_parameters(self) -> DataFrame: ...
-
-    def create_model(self) -> None: ...
-
-    def simulate(self) -> ArrayLike: ...
-
-
-class ModflowRch:
+class Modflow:
     def __init__(
         self, exe_name: str, sim_ws: str, raise_on_modflow_error: bool = False
-    ):
+    ) -> None:
         self.exe_name = exe_name
         self.sim_ws = sim_ws
-        self._name = "mf_rch"
-        self._stress = None
-        self._simulation = None
-        self._gwf = None
-        self._changing_packages = (
-            "STO",
-            "GHB",
-            "RCH",
-        )
         self.raise_on_modflow_error = raise_on_modflow_error
+        self._name = "mf_base"
+        self._changing_packages = ("STO", "GHB")
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
             columns=["initial", "pmin", "pmax", "vary", "name", "dist"]
         )
-        parameters.loc[name + "_s"] = (0.05, 0.001, 0.5, True, name, "uniform")
         parameters.loc[name + "_c"] = (220, 1e1, 1e8, True, name, "uniform")
-        parameters.loc[name + "_f"] = (-1.0, -2.0, 0.0, True, name, "uniform")
+        parameters.loc[name + "_s"] = (0.05, 0.001, 0.5, True, name, "uniform")
         return parameters
 
-    def create_model(self) -> None:
+    def base_model(self) -> None:
         sim = flopy.mf6.MFSimulation(
             sim_name=self._name,
             version="mf6",
@@ -109,18 +91,34 @@ class ModflowRch:
         self._simulation = sim
         self._gwf = gwf
 
-    def update_model(self, p: ArrayLike):
-        s, c, f = p[0:3]
+    @functools.lru_cache(maxsize=5)
+    def get_head(self, p):
+        self.update_model(p=p)
+        success, _ = self._simulation.run_simulation(silent=True)
+        if success:
+            return self._gwf.output.head().get_ts((0, 0, 0))[:, 1]
+        else:
+            logger.error("ModflowError: model run failed with parameters: %s" % str(p))
+            if self.raise_on_modflow_error:
+                raise Exception(
+                    "Modflow run failed. Check the LIST file for more information."
+                )
+            else:
+                return np.zeros(self._nper)
 
-        d = 0.0
-        rech = self._stress[0] + f * self._stress[1]
+    def simulate(self, p: ArrayLike, stress: List[Series]) -> ArrayLike:
+        if self._simulation is None:
+            self._stress = stress
+            self._nper = len(self._stress[0])
+            self.base_model()
+        return self.get_head(tuple(p))
 
-        # remove existing packages
-        if all(
-            [True for x in self._gwf.get_package_list() if x in self._changing_packages]
-        ):
-            [self._gwf.remove_package(x) for x in self._changing_packages]
+    def remove_changing_packages(self):
+        for cp in self._changing_packages:
+            if cp in self._gwf.get_package_list():
+                self._gwf.remove_package(cp)
 
+    def update_sto(self, s: float):
         haq = (self._gwf.dis.top.array - self._gwf.dis.botm.array)[0]
         sto = flopy.mf6.ModflowGwfsto(
             self._gwf,
@@ -132,6 +130,7 @@ class ModflowRch:
         )
         sto.write()
 
+    def update_ghb(self, d: float, c: float):
         # ghb
         ghb = flopy.mf6.ModflowGwfghb(
             self._gwf,
@@ -140,6 +139,34 @@ class ModflowRch:
             pname="ghb",
         )
         ghb.write()
+
+
+class ModflowRch(Modflow):
+    def __init__(
+        self, exe_name: str, sim_ws: str, raise_on_modflow_error: bool = False
+    ):
+        self._name = "mf_rch"
+        self._stress = None
+        self._simulation = None
+        self._gwf = None
+        self._changing_packages = ("STO", "GHB", "RCH")
+        Modflow.__init__(self, exe_name, sim_ws, raise_on_modflow_error)
+
+    def get_init_parameters(self, name: str) -> DataFrame:
+        parameters = Modflow.get_init_parameters(self, name)
+        parameters.loc[name + "_f"] = (-1.0, -2.0, 0.0, True, name, "uniform")
+        return parameters
+
+    def update_model(self, p: ArrayLike):
+        c, s, f = p[0:3]
+
+        d = 0.0
+
+        rech = self._stress[0] + f * self._stress[1]
+
+        self.remove_changing_packages()
+        self.update_sto(s=s)
+        self.update_ghb(d=d, c=c)
 
         rts = [(i, x) for i, x in zip(range(self._nper + 1), np.append(rech, 0.0))]
 
@@ -161,28 +188,3 @@ class ModflowRch:
         rch.ts.write()
 
         self._gwf.name_file.write()
-
-    @functools.lru_cache(maxsize=5)
-    def _get_head(self, p):
-        self.update_model(p=p)
-        success, _ = self._simulation.run_simulation(silent=True)
-        if success:
-            return self._gwf.output.head().get_ts((0, 0, 0))[:, 1]
-        else:
-            logger.error(
-                "ModflowError: model run failed with parameters: "
-                f"s={p[0]}, c={p[1]}, f={p[2]}"
-            )
-            if self.raise_on_modflow_error:
-                raise Exception(
-                    "Modflow run failed. Check the LIST file for more information."
-                )
-            else:
-                return np.zeros(self._nper)
-
-    def simulate(self, p: ArrayLike, stress: List[Series]) -> ArrayLike:
-        if self._simulation is None:
-            self._stress = stress
-            self._nper = len(self._stress[0])
-            self.create_model()
-        return self._get_head(tuple(p))
