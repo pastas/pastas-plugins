@@ -208,7 +208,8 @@ class ModflowRch(Modflow):
         parameters.loc[name + "_f"] = (-1.0, -2.0, 0.0, True, name, "uniform")
         return parameters
 
-    def update_rch(self, rech: Series):
+    def update_rch(self, f: float):
+        rech = self._stress[0] + f * self._stress[1]
         rts = [(i, x) for i, x in zip(range(self._nper + 1), np.append(rech, 0.0))]
 
         ts_dict = {
@@ -242,8 +243,7 @@ class ModflowRch(Modflow):
         self.update_sto(s=s)
         self.update_ghb(d=d, c=c)
 
-        rech = self._stress[0] + f * self._stress[1]
-        self.update_rch(rech=rech)
+        self.update_rch(f=f)
 
         self._gwf.name_file.write()
 
