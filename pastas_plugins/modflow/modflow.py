@@ -253,7 +253,8 @@ class ModflowUzf(Modflow):
         self,
         exe_name: str,
         sim_ws: str,
-        nlay: int,
+        head: Series | None = None,
+        nlay: int = 10,
         simulate_et: bool = True,
         gwet_linear_or_square: None | Literal["linear", "square"] = "linear",
         unsat_et_wc_or_ae: Literal["wc", "ae"] = "wc",
@@ -261,14 +262,18 @@ class ModflowUzf(Modflow):
         nwavesets: int = 75,
         raise_on_modflow_error: bool = False,
     ):
-        self._name = "mf_uzf"
-        self._stress = None
-        self._changing_packages = ("STO", "GHB", "UZF")
         Modflow.__init__(
             self,
             exe_name=exe_name,
             sim_ws=sim_ws,
+            head=head,
             raise_on_modflow_error=raise_on_modflow_error,
+        )
+        self._name = "mf_uzf"
+        self._changing_packages = (
+            ("DIS", "IC", "STO", "GHB", "UZF")
+            if self.constant_d_from_modflow
+            else ("STO", "GHB", "UZF")
         )
         self.nlay = nlay
         self.simulate_et = simulate_et
@@ -279,30 +284,17 @@ class ModflowUzf(Modflow):
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = Modflow.get_init_parameters(self, name)
-        parameters.loc[name + "_height"] = (1.0, 5.0, 2.0, True, name, "uniform")
-        parameters.loc[name + "_vks"] = (0.0, 10.0, 1.0, True, name, "uniform")
-        parameters.loc[name + "_thtr"] = (0.0, 0.2, 0.1, True, name, "uniform")
-        parameters.loc[name + "_thts"] = (0.2, 0.4, 0.3, True, name, "uniform")
-        parameters.loc[name + "_eps"] = (3.5, 10.0, 4.0, True, name, "uniform")
-        parameters.loc[name + "_extdp"] = (0.0, 1.0, 0.5, True, name, "uniform")
+        parameters.loc[name + "_height"] = (1.0, 1.0, 5.0, True, name, "uniform")
+        parameters.loc[name + "_vks"] = (1.0, 0.0, 10.0, True, name, "uniform")
+        parameters.loc[name + "_thtr"] = (0.1, 0.0, 0.2, True, name, "uniform")
+        parameters.loc[name + "_thts"] = (0.3, 0.2, 0.4, True, name, "uniform")
+        parameters.loc[name + "_eps"] = (3.5, 4.0, 10.0, True, name, "uniform")
+        parameters.loc[name + "_extdp"] = (0.5, 0.0, 5.0,  True, name, "uniform")
         return parameters
 
-    def update_model(self, p: ArrayLike):
-        if self.head is None:
-            d, c, s, height, vks, thtr, thts, eps, extdp, ha, hroot, rootact = p[0:10]
-        else:
-            c, s, height, vks, thtr, thts, eps, extdp, ha, hroot, rootact = p[0:9]
-            d = 0.0
-
-        self.remove_changing_packages()
-        self.update_dis(d=d, height=height)
-        self.update_ic(d=d)
-        self.update_sto(s=s)
-        self.update_ghb(d=d, c=c)
-
+    def update_uzf(self, vks: float, thts: float, thtr: float, eps: float, extdp: float):
         finf = self._stress[0]
         pet = self._stress[1]  # make sure et is positive!
-        # note: for specifying uzf number, use fortran indexing!
 
         thti = (thts - thtr) / 2  # initial water content
         extwc = thtr  # extiction water content
@@ -313,10 +305,10 @@ class ModflowUzf(Modflow):
         uzf_pkdat = [
             [
                 n,  # iuzno
-                (n, 0, 0),  # uzf_cellid
+                (0, 0, 0),  # gwf_cellid
                 1 if n == 0 else 0,  # landflag
                 n + 1 if (n + 1) != self.nlay else -1,  # ivertcon
-                1e-5,  # surface depression depth
+                1e-5,  # surface depression depth (TODO: if n == 0)?
                 vks,  # vertical saturated hydraulic conductivity
                 thtr,  # residual water content
                 thts,  # saturated water content
@@ -339,14 +331,17 @@ class ModflowUzf(Modflow):
                     ha,  # always specified, but is only used if SIMULATE ET and UNSAT ETAE are specified
                     hroot,  # always specified, but is only used if SIMULATE ET and UNSAT ETAE are specified
                     rootact,  # always specified, but is only used if SIMULATE ET and UNSAT ETAE are specified
+                    1 / self.nlay
                 ]
                 for n in range(self.nlay)
             ]
             uzf_spd[iper] = data
         # uzf_spd = dict([(i, []) for i, (ir, er) in enumerate(zip(p, e))])
 
-        _ = flopy.mf6.ModflowGwfuzf(
+        uzf = flopy.mf6.ModflowGwfuzf(
             self._gwf,
+            auxiliary=["uzflay_gwf_ratio"],
+            auxmultname=["uzflay_gwf_ratio"],
             print_input=True,  # list of UZF information will be written to the listing file immediately after it is read.
             print_flows=True,  # the list of UZF flow rates will be printed to the listing file for every flow rates are printed for the last time step of each stress period
             save_flows=False,
@@ -374,9 +369,24 @@ class ModflowUzf(Modflow):
             packagedata=uzf_pkdat,
             perioddata=uzf_spd,
             # budget_filerecord=f"{self._name}.uzf.bud",
-            wc_filerecord=f"{self._name}.uzf.bin",
+            # wc_filerecord=f"{self._name}.uzf.bin",
             # observations=uzf_obs,
             pname="uzf",
             filename=f"{self._name}.uzf",
         )
+        uzf.write()
+
+    def update_model(self, p: ArrayLike):
+        self.remove_changing_packages()
+        if self.constant_d_from_modflow:
+            d, c, s, height, vks, thtr, thts, eps, extdp = p[0:9]
+            self.update_ic(d=d)
+        else:
+            c, s, height, vks, thtr, thts, eps, extdp = p[0:8]
+            d = 0.0
+
+        self.update_dis(d=d, height=height)
+        self.update_sto(s=s)
+        self.update_ghb(d=d, c=c)
+        self.update_uzf(vks=vks, thts=thts, thtr=thtr, eps=eps, extdp=extdp)
         self._gwf.name_file.write()
