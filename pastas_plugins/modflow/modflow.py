@@ -88,7 +88,6 @@ class Modflow:
             linear_acceleration="BICGSTAB",
             pname=None,
         )
-        # sim.register_ims_package(imsgwf, [self._name])
 
         _ = flopy.mf6.ModflowGwfnpf(
             self._gwf, save_flows=False, icelltype=0, k=1.0, pname="npf"
@@ -254,7 +253,6 @@ class ModflowUzf(Modflow):
         exe_name: str,
         sim_ws: str,
         head: Series | None = None,
-        nlay: int = 10,
         simulate_et: bool = True,
         gwet_linear_or_square: None | Literal["linear", "square"] = "linear",
         unsat_et_wc_or_ae: Literal["wc", "ae"] = "wc",
@@ -275,7 +273,6 @@ class ModflowUzf(Modflow):
             if self.constant_d_from_modflow
             else ("STO", "GHB", "UZF")
         )
-        self.nlay = nlay
         self.simulate_et = simulate_et
         self.gwet_linear_or_square = gwet_linear_or_square
         self.unsat_et_wc_or_ae = unsat_et_wc_or_ae
@@ -301,13 +298,14 @@ class ModflowUzf(Modflow):
         ha = 0.0  # air entry potential (head)
         hroot = 0.0  # the root potential (head)
         rootact = 0.0  # the length of roots in a given volume of soil divided by that volume [L^-2]
+        nlay: int = 1
 
         uzf_pkdat = [
             [
                 n,  # iuzno
                 (0, 0, 0),  # gwf_cellid
                 1 if n == 0 else 0,  # landflag
-                n + 1 if (n + 1) != self.nlay else -1,  # ivertcon
+                n + 1 if (n + 1) != nlay else -1,  # ivertcon
                 1e-5,  # surface depression depth (TODO: if n == 0)?
                 vks,  # vertical saturated hydraulic conductivity
                 thtr,  # residual water content
@@ -316,7 +314,7 @@ class ModflowUzf(Modflow):
                 eps,  # brooks-corey epsilon exponent
                 f"uzf_cell_{n:02d}",  # boundname
             ]
-            for n in range(self.nlay)
+            for n in range(nlay)
         ]
 
         uzf_spd = {}
@@ -331,17 +329,13 @@ class ModflowUzf(Modflow):
                     ha,  # always specified, but is only used if SIMULATE ET and UNSAT ETAE are specified
                     hroot,  # always specified, but is only used if SIMULATE ET and UNSAT ETAE are specified
                     rootact,  # always specified, but is only used if SIMULATE ET and UNSAT ETAE are specified
-                    1 / self.nlay
                 ]
-                for n in range(self.nlay)
+                for n in range(nlay)
             ]
             uzf_spd[iper] = data
-        # uzf_spd = dict([(i, []) for i, (ir, er) in enumerate(zip(p, e))])
 
         uzf = flopy.mf6.ModflowGwfuzf(
             self._gwf,
-            auxiliary=["uzflay_gwf_ratio"],
-            auxmultname=["uzflay_gwf_ratio"],
             print_input=True,  # list of UZF information will be written to the listing file immediately after it is read.
             print_flows=True,  # the list of UZF flow rates will be printed to the listing file for every flow rates are printed for the last time step of each stress period
             save_flows=False,
@@ -365,7 +359,7 @@ class ModflowUzf(Modflow):
             simulate_gwseep=True,
             ntrailwaves=self.ntrailwaves,
             nwavesets=self.nwavesets,
-            nuzfcells=self.nlay,
+            nuzfcells=nlay,
             packagedata=uzf_pkdat,
             perioddata=uzf_spd,
             # budget_filerecord=f"{self._name}.uzf.bud",
