@@ -95,7 +95,7 @@ class Modflow:
         )
 
         _ = flopy.mf6.ModflowGwfnpf(
-            self._gwf, save_flows=False, icelltype=0, k=1.0, pname="npf"
+            self._gwf, save_flows=False, icelltype=0, pname="npf"
         )
 
         _ = flopy.mf6.ModflowGwfoc(
@@ -170,6 +170,7 @@ class Modflow:
             save_flows=False,
             iconvert=0,
             ss=s / haq,
+            sy=0.0, # just to show the specific yield is not needed
             transient=True,
             pname="sto",
         )
