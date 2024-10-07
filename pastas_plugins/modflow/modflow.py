@@ -300,7 +300,7 @@ class ModflowUzf(Modflow):
         parameters.loc[name + "_thtr"] = (0.1, 0.0, 0.2, True, name, "uniform")
         parameters.loc[name + "_thts"] = (0.3, 0.2, 0.4, True, name, "uniform")
         parameters.loc[name + "_eps"] = (5.0, 3.5, 10.0, True, name, "uniform")
-        parameters.loc[name + "_extdp"] = (0.5, 0.0, 5.0, True, name, "uniform")
+        parameters.loc[name + "_extdpfrac"] = (0.5, 0.0, 1.0, True, name, "uniform")
         return parameters
 
     def update_uzf(
@@ -421,15 +421,16 @@ class ModflowUzf(Modflow):
 
     def update_model(self, p: ArrayLike):
         if self.constant_d_from_modflow:
-            d, c, s, height, vks, thtr, thts, eps, extdp = p[0:9]
+            d, c, s, height, vks, thtr, thts, eps, extdpfrac = p[0:9]
             self.update_ic(d=d)
         else:
-            c, s, height, vks, thtr, thts, eps, extdp = p[0:8]
+            c, s, height, vks, thtr, thts, eps, extdpfrac = p[0:8]
             d = 0.0
 
         self.update_dis(d=d, height=height)
         self.update_sto(s=s)
         self.update_ghb(d=d, c=c)
         self.update_drn()
+        extdp = extdpfrac * height
         self.update_uzf(vks=vks, thts=thts, thtr=thtr, eps=eps, extdp=extdp)
         self._gwf.name_file.write()
