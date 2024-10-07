@@ -310,7 +310,7 @@ class ModflowUzf(Modflow):
         finf = self._stress[0]
         pet = self._stress[1]  # make sure et is positive!
 
-        thti = (thts - thtr) / 2  # initial water content
+        thti = (thts + thtr) / 2  # initial water content
         # Evapotranspiration in the unsaturated zone will be simulated as a
         # function of the specified potential evapotranspiration rate while
         # the water content (THETA) is greater than the ET extinction water
