@@ -255,7 +255,6 @@ class ModflowUzf(Modflow):
         head: Series | None = None,
         simulate_et: bool = True,
         gwet_linear_or_square: None | Literal["linear", "square"] = "linear",
-        unsat_et_wc_or_ae: Literal["wc", "ae"] = "wc",
         ntrailwaves: int = 7,
         nwavesets: int = 40,
         solver_kwargs: dict | None = None,
@@ -291,7 +290,6 @@ class ModflowUzf(Modflow):
         self._name = "mf_uzf"
         self.simulate_et = simulate_et
         self.gwet_linear_or_square = gwet_linear_or_square
-        self.unsat_et_wc_or_ae = unsat_et_wc_or_ae
         self.ntrailwaves = ntrailwaves
         self.nwavesets = nwavesets
 
@@ -313,12 +311,25 @@ class ModflowUzf(Modflow):
         pet = self._stress[1]  # make sure et is positive!
 
         thti = (thts - thtr) / 2  # initial water content
+        # Evapotranspiration in the unsaturated zone will be simulated as a
+        # function of the specified potential evapotranspiration rate while
+        # the water content (THETA) is greater than the ET extinction water
+        # content (EXTWC).
+        unsat_etwc = True
         extwc = thtr  # extiction water content
+        # only if unsat_etae is True
+
+        # Evapotranspiration in the unsaturated zone will be simulated
+        # simulated using a capillary pressure based formulation. Capillary
+        # pressure is calculated using the Brooks-Corey retention function.
+        unsat_etae = False
         ha = 0.0  # air entry potential (head)
         hroot = 0.0  # the root potential (head)
         rootact = 0.0  # the length of roots in a given volume of soil divided by that volume [L^-2]
+
         nlay = 1  # only one uzf cell / layer
         simulate_gwseep = False
+
         uzf_pkdat = [
             [
                 n,  # iuzno
@@ -357,10 +368,10 @@ class ModflowUzf(Modflow):
 
         uzf = flopy.mf6.ModflowGwfuzf(
             self._gwf,
-            print_input=True,  # list of UZF information will be written to the listing file immediately after it is read.
-            print_flows=True,  # the list of UZF flow rates will be printed to the listing file for every flow rates are printed for the last time step of each stress period
+            print_input=True,
+            print_flows=True,
             save_flows=False,
-            boundnames=True,  #  boundary names may be provided with the list of UZF cells
+            boundnames=True,
             # If this option is selected, evapotranspiration will be simulated
             # in the unsaturated zone but not in the saturated zone.
             simulate_et=True,
@@ -378,16 +389,6 @@ class ModflowUzf(Modflow):
             # reduced from the potential evapotranspiration rate to zero over a
             # nominal interval at TOP-EXTDP.
             square_gwet=self.gwet_linear_or_square == "square",
-            # Evapotranspiration in the unsaturated zone will be simulated as a
-            # function of the specified potential evapotranspiration rate while
-            # the water content (THETA) is greater than the ET extinction water
-            # content (EXTWC).
-            unsat_etwc=self.unsat_et_wc_or_ae == "wc",
-            # Evapotranspiration in the unsaturated zone will be simulated
-            # simulated using a capillary pressure based formulation. Capillary
-            # pressure is calculated using the Brooks-Corey retention function.
-            unsat_etae=self.unsat_et_wc_or_ae == "ae",
-            simulate_gwseep=simulate_gwseep,
             ntrailwaves=self.ntrailwaves,
             nwavesets=self.nwavesets,
             nuzfcells=nlay,
