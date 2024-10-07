@@ -328,7 +328,6 @@ class ModflowUzf(Modflow):
         rootact = 0.0  # the length of roots in a given volume of soil divided by that volume [L^-2]
 
         nlay = 1  # only one uzf cell / layer
-        simulate_gwseep = False
 
         uzf_pkdat = [
             [
@@ -389,6 +388,9 @@ class ModflowUzf(Modflow):
             # reduced from the potential evapotranspiration rate to zero over a
             # nominal interval at TOP-EXTDP.
             square_gwet=self.gwet_linear_or_square == "square",
+            unsat_etwc=unsat_etwc,
+            unsat_etae=unsat_etae,
+            simulate_gwseep=False, # deprecated in favor of drn
             ntrailwaves=self.ntrailwaves,
             nwavesets=self.nwavesets,
             nuzfcells=nlay,
@@ -401,6 +403,22 @@ class ModflowUzf(Modflow):
         uzf.write()
         uzf.ts.write()
 
+    def update_drn(self):
+        self._remove_changing_package("DRN")
+        top = self._gwf.dis.top.array[0][0]
+        elev = top - 1e-6 # top - surfdep
+        drn = flopy.mf6.ModflowGwfdrn(
+            self._gwf,
+            print_input=True,
+            print_flows=True,
+            save_flows=False,
+            boundnames=True,
+            maxbound=1,
+            stress_period_data={0: [[(0, 0, 0), elev, 1e10]]},
+            pname="drn",
+        )
+        drn.write()
+
     def update_model(self, p: ArrayLike):
         if self.constant_d_from_modflow:
             d, c, s, height, vks, thtr, thts, eps, extdp = p[0:9]
@@ -412,5 +430,6 @@ class ModflowUzf(Modflow):
         self.update_dis(d=d, height=height)
         self.update_sto(s=s)
         self.update_ghb(d=d, c=c)
+        self.update_drn()
         self.update_uzf(vks=vks, thts=thts, thtr=thtr, eps=eps, extdp=extdp)
         self._gwf.name_file.write()
