@@ -335,13 +335,13 @@ class ModflowUzf(Modflow):
                 (0, 0, 0),  # gwf_cellid
                 1 if n == 0 else 0,  # landflag
                 n + 1 if (n + 1) != nlay else -1,  # ivertcon
-                1e-6,  # surface depression depth
+                1e-5,  # surface depression depth
                 vks,  # vertical saturated hydraulic conductivity
                 thtr,  # residual water content
                 thts,  # saturated water content
                 thti,  # initial water content
                 eps,  # brooks-corey epsilon exponent
-                f"uzf_cell_{n:03d}",  # boundname
+                f"CELLID_UZF_{n:03d}",  # boundname
             ]
             for n in range(nlay)
         ]
@@ -406,7 +406,7 @@ class ModflowUzf(Modflow):
     def update_drn(self):
         self._remove_changing_package("DRN")
         top = self._gwf.dis.top.array[0][0]
-        elev = top - 1e-6 # top - surfdep
+        elev = top - 1e-5 # top - surfdep
         drn = flopy.mf6.ModflowGwfdrn(
             self._gwf,
             print_input=True,
