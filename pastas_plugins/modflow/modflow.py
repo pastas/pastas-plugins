@@ -435,3 +435,59 @@ class ModflowUzf(Modflow):
         extdp = extdpfrac * height
         self.update_uzf(vks=vks, thts=thts, thtr=thtr, eps=eps, extdp=extdp)
         self._gwf.name_file.write()
+
+
+class ModflowDrn(ModflowRch):
+    def __init__(
+        self,
+        exe_name: str,
+        sim_ws: str,
+        head: Series | None = None,
+        solver_kwargs: dict | None = None,
+        raise_on_modflow_error: bool = False,
+    ):
+        ModflowRch.__init__(
+            self,
+            exe_name=exe_name,
+            sim_ws=sim_ws,
+            head=head,
+            solver_kwargs=solver_kwargs,
+            raise_on_modflow_error=raise_on_modflow_error,
+        )
+        self._name = "mf_drn"
+
+    def get_init_parameters(self, name: str) -> DataFrame:
+        parameters = ModflowRch.get_init_parameters(self, name)
+        parameters.loc[name + "_drnheight"] = (1.0, 0.0, 10.0, True, name, "uniform")
+        parameters.loc[name + "_cond"] = (10.0, 1.0, 1000.0, True, name, "uniform")
+        return parameters
+
+    def update_drn(self, elev: float, cond: float):
+        drn = flopy.mf6.ModflowGwfdrn(
+            self._gwf,
+            print_input=True,
+            print_flows=True,
+            save_flows=False,
+            boundnames=True,
+            maxbound=1,
+            stress_period_data={0: [[(0, 0, 0), elev, cond]]},
+            pname="drn",
+        )
+        drn.write()
+
+    def update_model(self, p: ArrayLike):
+        if self.constant_d_from_modflow:
+            d, c, s, f, drnheight, cond = p[0:6]
+            self.update_ic(d=d)
+        else:
+            c, s, f, drnheight, cond = p[0:5]
+            d = 0.0
+
+        height = d + drnheight + 1.0 # height of cell should be above drain elevation. check if this is correct, could maybe also be without +1.0?
+        self.update_dis(d=d, height=height)
+        self.update_sto(s=s)
+        self.update_ghb(d=d, c=c)
+        self.udpate_rch(f=f)
+        elev = d + drnheight # elvation of drain
+        self.update_drn(elev=elev, cond=cond)
+        self._gwf.name_file.write()
