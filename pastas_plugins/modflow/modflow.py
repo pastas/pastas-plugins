@@ -47,11 +47,9 @@ class Modflow:
             )
             self._head = head
             self.constant_d_from_modflow = True
-            self._changing_packages = ("DIS", "IC", "STO", "GHB")
         else:
             self._head = None
             self.constant_d_from_modflow = False
-            self._changing_packages = ("STO", "GHB")
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
@@ -138,12 +136,12 @@ class Modflow:
             self.base_model()
         return self.get_head(tuple(p))
 
-    def remove_changing_packages(self):
-        for cp in self._changing_packages:
-            if cp in self._gwf.get_package_list():
-                self._gwf.remove_package(cp)
+    def _remove_changing_package(self, package_name: str):
+        if package_name in self._gwf.get_package_list():
+            self._gwf.remove_package(package_name)
 
     def update_dis(self, d: float, height: float = 1.0):
+        self._remove_changing_package("DIS")
         dis = flopy.mf6.ModflowGwfdis(
             self._gwf,
             length_units="METERS",
@@ -160,10 +158,12 @@ class Modflow:
         dis.write()
 
     def update_ic(self, d: float):
+        self._remove_changing_package("IC")
         ic = flopy.mf6.ModflowGwfic(self._gwf, strt=d, pname="ic")
         ic.write()
 
     def update_sto(self, s: float):
+        self._remove_changing_package("STO")
         haq = (self._gwf.dis.top.array - self._gwf.dis.botm.array)[0]
         sto = flopy.mf6.ModflowGwfsto(
             self._gwf,
@@ -176,7 +176,7 @@ class Modflow:
         sto.write()
 
     def update_ghb(self, d: float, c: float):
-        # ghb
+        self._remove_changing_package("GHB")
         ghb = flopy.mf6.ModflowGwfghb(
             self._gwf,
             maxbound=1,
@@ -204,11 +204,6 @@ class ModflowRch(Modflow):
             raise_on_modflow_error=raise_on_modflow_error,
         )
         self._name = "mf_rch"
-        self._changing_packages = (
-            ("DIS", "IC", "STO", "GHB", "RCH")
-            if self.constant_d_from_modflow
-            else ("STO", "GHB", "RCH")
-        )
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = Modflow.get_init_parameters(self, name)
@@ -216,6 +211,7 @@ class ModflowRch(Modflow):
         return parameters
 
     def update_rch(self, f: float):
+        self._remove_changing_package("RCH")
         rech = self._stress[0] + f * self._stress[1]
         rts = [(i, x) for i, x in zip(range(self._nper + 1), np.append(rech, 0.0))]
 
@@ -237,8 +233,6 @@ class ModflowRch(Modflow):
         rch.ts.write()
 
     def update_model(self, p: ArrayLike):
-        self.remove_changing_packages()
-
         if self.constant_d_from_modflow:
             d, c, s, f = p[0:4]
             self.update_dis(d=d, height=1.0)
@@ -249,9 +243,7 @@ class ModflowRch(Modflow):
 
         self.update_sto(s=s)
         self.update_ghb(d=d, c=c)
-
         self.update_rch(f=f)
-
         self._gwf.name_file.write()
 
 
@@ -297,11 +289,6 @@ class ModflowUzf(Modflow):
             raise_on_modflow_error=raise_on_modflow_error,
         )
         self._name = "mf_uzf"
-        self._changing_packages = (
-            ("DIS", "IC", "STO", "GHB", "UZF")
-            if self.constant_d_from_modflow
-            else ("STO", "GHB", "UZF")
-        )
         self.simulate_et = simulate_et
         self.gwet_linear_or_square = gwet_linear_or_square
         self.unsat_et_wc_or_ae = unsat_et_wc_or_ae
@@ -321,6 +308,7 @@ class ModflowUzf(Modflow):
     def update_uzf(
         self, vks: float, thts: float, thtr: float, eps: float, extdp: float
     ):
+        self._remove_changing_package("UZF")
         finf = self._stress[0]
         pet = self._stress[1]  # make sure et is positive!
 
@@ -406,9 +394,6 @@ class ModflowUzf(Modflow):
             packagedata=uzf_pkdat,
             perioddata=perioddata,
             timeseries=ts_dict,
-            # budget_filerecord=f"{self._name}.uzf.bud",
-            # wc_filerecord=f"{self._name}.uzf.bin",
-            # observations=uzf_obs,
             pname="uzf",
             filename=f"{self._name}.uzf",
         )
@@ -416,7 +401,6 @@ class ModflowUzf(Modflow):
         uzf.ts.write()
 
     def update_model(self, p: ArrayLike):
-        self.remove_changing_packages()
         if self.constant_d_from_modflow:
             d, c, s, height, vks, thtr, thts, eps, extdp = p[0:9]
             self.update_ic(d=d)
