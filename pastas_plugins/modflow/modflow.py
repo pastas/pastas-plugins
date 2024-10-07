@@ -220,7 +220,7 @@ class ModflowRch(Modflow):
         rts = [(i, x) for i, x in zip(range(self._nper + 1), np.append(rech, 0.0))]
 
         ts_dict = {
-            "filename": "recharge.ts",
+            "filename": f"{self._gfw.name}.rch_ts",
             "timeseries": rts,
             "time_series_namerecord": ["recharge"],
             "interpolation_methodrecord": ["stepwise"],
@@ -315,10 +315,12 @@ class ModflowUzf(Modflow):
         parameters.loc[name + "_thtr"] = (0.1, 0.0, 0.2, True, name, "uniform")
         parameters.loc[name + "_thts"] = (0.3, 0.2, 0.4, True, name, "uniform")
         parameters.loc[name + "_eps"] = (3.5, 4.0, 10.0, True, name, "uniform")
-        parameters.loc[name + "_extdp"] = (0.5, 0.0, 5.0,  True, name, "uniform")
+        parameters.loc[name + "_extdp"] = (0.5, 0.0, 5.0, True, name, "uniform")
         return parameters
 
-    def update_uzf(self, vks: float, thts: float, thtr: float, eps: float, extdp: float):
+    def update_uzf(
+        self, vks: float, thts: float, thtr: float, eps: float, extdp: float
+    ):
         finf = self._stress[0]
         pet = self._stress[1]  # make sure et is positive!
 
@@ -346,22 +348,24 @@ class ModflowUzf(Modflow):
             for n in range(nlay)
         ]
 
-        uzf_spd = {}
-        for iper, (finf_i, pet_i) in enumerate(zip(finf, pet)):
-            data = [
-                [
-                    n,  # node
-                    finf_i,  # infiltration rate
-                    pet_i,  # evapotranspiration rate
-                    extdp,  # extinction depth, always specified, but is only used if SIMULATE ET is specified
-                    extwc,  # always specified, but is only used if SIMULATE ET and UNSAT ETWC are specified
-                    ha,  # always specified, but is only used if SIMULATE ET and UNSAT ETAE are specified
-                    hroot,  # always specified, but is only used if SIMULATE ET and UNSAT ETAE are specified
-                    rootact,  # always specified, but is only used if SIMULATE ET and UNSAT ETAE are specified
-                ]
+        uzfts = [
+            (i, finfi, peti)
+            for i, finfi, peti in zip(
+                range(self._nper + 1), np.append(finf, 0.0), np.append(pet, 0.0)
+            )
+        ]
+        ts_dict = {
+            "filename": f"{self._gwf.name}.uzf_ts",
+            "timeseries": uzfts,
+            "time_series_namerecord": ["finf", "pet"],
+            "interpolation_methodrecord": ["stepwise", "stepwise"],
+        }
+        perioddata = {
+            0: [
+                [n, "finf", "pet", extdp, extwc, ha, hroot, rootact]
                 for n in range(nlay)
             ]
-            uzf_spd[iper] = data
+        }
 
         uzf = flopy.mf6.ModflowGwfuzf(
             self._gwf,
@@ -369,8 +373,13 @@ class ModflowUzf(Modflow):
             print_flows=True,  # the list of UZF flow rates will be printed to the listing file for every flow rates are printed for the last time step of each stress period
             save_flows=False,
             boundnames=True,  #  boundary names may be provided with the list of UZF cells
-            simulate_et=True,  # If this option is selected, evapotranspiration will be simulated in the unsaturated zone but not in the saturated zone.
-            # If this option is selected, evapotranspiration will be simulated in both the unsaturated and saturated zones. The groundwater evapotranspiration will be simulated using the original ET formulation of MODFLOW-2005.
+            # If this option is selected, evapotranspiration will be simulated
+            # in the unsaturated zone but not in the saturated zone.
+            simulate_et=True,
+            # If this option is selected, evapotranspiration will be simulated
+            # in both the unsaturated and saturated zones. The groundwater
+            # evapotranspiration will be simulated using the original ET
+            # formulation of MODFLOW-2005.
             linear_gwet=self.gwet_linear_or_square == "linear",
             # square_gwet: If this option is selected, evapotranspiration will be simulated
             # in both the unsaturated and saturated zones. The groundwater
@@ -381,16 +390,22 @@ class ModflowUzf(Modflow):
             # reduced from the potential evapotranspiration rate to zero over a
             # nominal interval at TOP-EXTDP.
             square_gwet=self.gwet_linear_or_square == "square",
-            unsat_etwc=self.unsat_et_wc_or_ae
-            == "wc",  # Evapotranspiration in the unsaturated zone will be simulated as a function of the specified potential evapotranspiration rate while the water content (THETA) is greater than the ET extinction water content (EXTWC).
-            unsat_etae=self.unsat_et_wc_or_ae
-            == "ae",  # Evapotranspiration in the unsaturated zone will be simulated simulated using a capillary pressure based formulation. Capillary pressure is calculated using the Brooks-Corey retention function.
+            # Evapotranspiration in the unsaturated zone will be simulated as a
+            # function of the specified potential evapotranspiration rate while
+            # the water content (THETA) is greater than the ET extinction water
+            # content (EXTWC).
+            unsat_etwc=self.unsat_et_wc_or_ae == "wc",
+            # Evapotranspiration in the unsaturated zone will be simulated
+            # simulated using a capillary pressure based formulation. Capillary
+            # pressure is calculated using the Brooks-Corey retention function.
+            unsat_etae=self.unsat_et_wc_or_ae == "ae",
             simulate_gwseep=True,
             ntrailwaves=self.ntrailwaves,
             nwavesets=self.nwavesets,
             nuzfcells=nlay,
             packagedata=uzf_pkdat,
-            perioddata=uzf_spd,
+            perioddata=perioddata,
+            timeseries=ts_dict,
             # budget_filerecord=f"{self._name}.uzf.bud",
             # wc_filerecord=f"{self._name}.uzf.bin",
             # observations=uzf_obs,
@@ -398,6 +413,7 @@ class ModflowUzf(Modflow):
             filename=f"{self._name}.uzf",
         )
         uzf.write()
+        uzf.ts.write()
 
     def update_model(self, p: ArrayLike):
         self.remove_changing_packages()
