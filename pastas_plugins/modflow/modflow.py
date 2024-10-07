@@ -17,6 +17,7 @@ class Modflow:
         exe_name: str,
         sim_ws: str,
         head: Series | None = None,
+        solver_kwargs: dict | None = None,
         raise_on_modflow_error: bool = False,
     ) -> None:
         self.exe_name = exe_name
@@ -27,6 +28,17 @@ class Modflow:
         self._name = "mf_base"
         self._stress = None
         self._nper = None
+        self.solver_kwargs = (
+            dict(
+                complexity="SIMPLE",
+                outer_dvclose=1e-2,
+                inner_dvclose=1e-2,
+                rcloserecord=1e-1,
+                linear_acceleration="BICGSTAB",
+            )
+            if solver_kwargs is None
+            else solver_kwargs
+        )
         if head is not None:
             logger.info(
                 "Make sure to delete the model parameter constant_d"
@@ -81,12 +93,7 @@ class Modflow:
 
         _ = flopy.mf6.ModflowIms(
             self._simulation,
-            complexity="SIMPLE",
-            outer_dvclose=1e-2,
-            inner_dvclose=1e-2,
-            rcloserecord=1e-1,
-            linear_acceleration="BICGSTAB",
-            pname=None,
+            **self.solver_kwargs,
         )
 
         _ = flopy.mf6.ModflowGwfnpf(
@@ -97,7 +104,6 @@ class Modflow:
             self._gwf,
             head_filerecord=f"{self._gwf.name}.hds",
             saverecord=[("HEAD", "ALL")],
-            pname=None,
         )
 
         self._simulation.write_simulation(silent=True)
@@ -186,6 +192,7 @@ class ModflowRch(Modflow):
         exe_name: str,
         sim_ws: str,
         head: Series | None = None,
+        solver_kwargs: dict | None = None,
         raise_on_modflow_error: bool = False,
     ):
         Modflow.__init__(
@@ -193,6 +200,7 @@ class ModflowRch(Modflow):
             exe_name=exe_name,
             sim_ws=sim_ws,
             head=head,
+            solver_kwargs=solver_kwargs,
             raise_on_modflow_error=raise_on_modflow_error,
         )
         self._name = "mf_rch"
@@ -258,13 +266,34 @@ class ModflowUzf(Modflow):
         unsat_et_wc_or_ae: Literal["wc", "ae"] = "wc",
         ntrailwaves: int = 15,
         nwavesets: int = 75,
+        solver_kwargs: dict | None = None,
         raise_on_modflow_error: bool = False,
     ):
+        if solver_kwargs is None:
+            solver_kwargs = dict(
+                print_option="summary",
+                outer_dvclose=3e-2,
+                outer_maximum=300,
+                under_relaxation="dbd",
+                linear_acceleration="BICGSTAB",
+                under_relaxation_theta=0.7,
+                under_relaxation_kappa=0.08,
+                under_relaxation_gamma=0.05,
+                under_relaxation_momentum=0.0,
+                inner_dvclose=3e-2,
+                rcloserecord="1000.0 strict",
+                inner_maximum=500,
+                relaxation_factor=0.97,
+                number_orthogonalizations=2,
+                preconditioner_levels=8,
+                preconditioner_drop_tolerance=0.001,
+            )
         Modflow.__init__(
             self,
             exe_name=exe_name,
             sim_ws=sim_ws,
             head=head,
+            solver_kwargs=solver_kwargs,
             raise_on_modflow_error=raise_on_modflow_error,
         )
         self._name = "mf_uzf"
