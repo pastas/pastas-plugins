@@ -220,7 +220,7 @@ class ModflowRch(Modflow):
         rts = [(i, x) for i, x in zip(range(self._nper + 1), np.append(rech, 0.0))]
 
         ts_dict = {
-            "filename": f"{self._gfw.name}.rch_ts",
+            "filename": f"{self._gwf.name}.rch_ts",
             "timeseries": rts,
             "time_series_namerecord": ["recharge"],
             "interpolation_methodrecord": ["stepwise"],
@@ -264,8 +264,8 @@ class ModflowUzf(Modflow):
         simulate_et: bool = True,
         gwet_linear_or_square: None | Literal["linear", "square"] = "linear",
         unsat_et_wc_or_ae: Literal["wc", "ae"] = "wc",
-        ntrailwaves: int = 15,
-        nwavesets: int = 75,
+        ntrailwaves: int = 7,
+        nwavesets: int = 40,
         solver_kwargs: dict | None = None,
         raise_on_modflow_error: bool = False,
     ):
@@ -310,11 +310,11 @@ class ModflowUzf(Modflow):
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = Modflow.get_init_parameters(self, name)
-        parameters.loc[name + "_height"] = (1.0, 1.0, 5.0, True, name, "uniform")
+        parameters.loc[name + "_height"] = (1.0, 0.01, 10.0, True, name, "uniform")
         parameters.loc[name + "_vks"] = (1.0, 0.0, 10.0, True, name, "uniform")
         parameters.loc[name + "_thtr"] = (0.1, 0.0, 0.2, True, name, "uniform")
         parameters.loc[name + "_thts"] = (0.3, 0.2, 0.4, True, name, "uniform")
-        parameters.loc[name + "_eps"] = (3.5, 4.0, 10.0, True, name, "uniform")
+        parameters.loc[name + "_eps"] = (5.0, 3.5, 10.0, True, name, "uniform")
         parameters.loc[name + "_extdp"] = (0.5, 0.0, 5.0, True, name, "uniform")
         return parameters
 
@@ -329,21 +329,21 @@ class ModflowUzf(Modflow):
         ha = 0.0  # air entry potential (head)
         hroot = 0.0  # the root potential (head)
         rootact = 0.0  # the length of roots in a given volume of soil divided by that volume [L^-2]
-        nlay: int = 1
-
+        nlay = 1  # only one uzf cell / layer
+        simulate_gwseep = False
         uzf_pkdat = [
             [
                 n,  # iuzno
                 (0, 0, 0),  # gwf_cellid
                 1 if n == 0 else 0,  # landflag
                 n + 1 if (n + 1) != nlay else -1,  # ivertcon
-                1e-5,  # surface depression depth (TODO: if n == 0)?
+                1e-6,  # surface depression depth
                 vks,  # vertical saturated hydraulic conductivity
                 thtr,  # residual water content
                 thts,  # saturated water content
                 thti,  # initial water content
                 eps,  # brooks-corey epsilon exponent
-                f"uzf_cell_{n:02d}",  # boundname
+                f"uzf_cell_{n:03d}",  # boundname
             ]
             for n in range(nlay)
         ]
@@ -399,7 +399,7 @@ class ModflowUzf(Modflow):
             # simulated using a capillary pressure based formulation. Capillary
             # pressure is calculated using the Brooks-Corey retention function.
             unsat_etae=self.unsat_et_wc_or_ae == "ae",
-            simulate_gwseep=True,
+            simulate_gwseep=simulate_gwseep,
             ntrailwaves=self.ntrailwaves,
             nwavesets=self.nwavesets,
             nuzfcells=nlay,
