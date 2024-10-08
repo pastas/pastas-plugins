@@ -87,6 +87,7 @@ class Modflow:
         self._gwf = flopy.mf6.ModflowGwf(
             self._simulation,
             modelname=self._name,
+            newtonoptions=["NEWTON"],
         )
 
         _ = flopy.mf6.ModflowIms(
