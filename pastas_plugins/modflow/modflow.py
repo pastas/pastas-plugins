@@ -171,7 +171,7 @@ class Modflow:
             save_flows=False,
             iconvert=0,
             ss=s / haq,
-            sy=0.0, # just to show the specific yield is not needed
+            sy=0.0,  # just to show the specific yield is not needed
             transient=True,
             pname="sto",
         )
@@ -301,12 +301,19 @@ class ModflowUzf(Modflow):
         parameters.loc[name + "_vks"] = (1.0, 0.0, 10.0, True, name, "uniform")
         parameters.loc[name + "_thtr"] = (0.1, 0.0, 0.2, True, name, "uniform")
         parameters.loc[name + "_thts"] = (0.3, 0.2, 0.4, True, name, "uniform")
+        parameters.loc[name + "_thextfrac"] = (0.1, 0.0, 1.0, True, name, "uniform")
         parameters.loc[name + "_eps"] = (5.0, 3.5, 10.0, True, name, "uniform")
         parameters.loc[name + "_extdpfrac"] = (0.5, 0.0, 1.0, True, name, "uniform")
         return parameters
 
     def update_uzf(
-        self, vks: float, thts: float, thtr: float, eps: float, extdp: float
+        self,
+        vks: float,
+        thts: float,
+        thtr: float,
+        thext: float,
+        eps: float,
+        extdp: float,
     ):
         self._remove_changing_package("UZF")
         finf = self._stress[0]
@@ -318,7 +325,6 @@ class ModflowUzf(Modflow):
         # the water content (THETA) is greater than the ET extinction water
         # content (EXTWC).
         unsat_etwc = True
-        extwc = thtr  # extiction water content
         # only if unsat_etae is True
 
         # Evapotranspiration in the unsaturated zone will be simulated
@@ -362,7 +368,7 @@ class ModflowUzf(Modflow):
         }
         perioddata = {
             0: [
-                [n, "finf", "pet", extdp, extwc, ha, hroot, rootact]
+                [n, "finf", "pet", extdp, thext, ha, hroot, rootact]
                 for n in range(nlay)
             ]
         }
@@ -392,7 +398,7 @@ class ModflowUzf(Modflow):
             square_gwet=self.gwet_linear_or_square == "square",
             unsat_etwc=unsat_etwc,
             unsat_etae=unsat_etae,
-            simulate_gwseep=False, # deprecated in favor of drn
+            simulate_gwseep=False,  # deprecated in favor of drn
             ntrailwaves=self.ntrailwaves,
             nwavesets=self.nwavesets,
             nuzfcells=nlay,
@@ -408,7 +414,7 @@ class ModflowUzf(Modflow):
     def update_drn(self):
         self._remove_changing_package("DRN")
         top = self._gwf.dis.top.array[0][0]
-        elev = top - 1e-5 # top - surfdep
+        elev = top - 1e-5  # top - surfdep
         drn = flopy.mf6.ModflowGwfdrn(
             self._gwf,
             print_input=True,
@@ -423,10 +429,10 @@ class ModflowUzf(Modflow):
 
     def update_model(self, p: ArrayLike):
         if self.constant_d_from_modflow:
-            d, c, s, height, vks, thtr, thts, eps, extdpfrac = p[0:9]
+            d, c, s, height, vks, thtr, thts, thextfrac, eps, extdpfrac = p[0:10]
             self.update_ic(d=d)
         else:
-            c, s, height, vks, thtr, thts, eps, extdpfrac = p[0:8]
+            c, s, height, vks, thtr, thts, thextfrac, eps, extdpfrac = p[0:9]
             d = 0.0
 
         self.update_dis(d=d, height=height)
@@ -434,7 +440,10 @@ class ModflowUzf(Modflow):
         self.update_ghb(d=d, c=c)
         self.update_drn()
         extdp = extdpfrac * height
-        self.update_uzf(vks=vks, thts=thts, thtr=thtr, eps=eps, extdp=extdp)
+        thext = thtr + (thts - thtr) * thextfrac
+        self.update_uzf(
+            vks=vks, thts=thts, thtr=thtr, thext=thext, eps=eps, extdp=extdp
+        )
         self._gwf.name_file.write()
 
 
