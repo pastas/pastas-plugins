@@ -497,7 +497,7 @@ class ModflowDrn(ModflowRch):
         self.update_dis(d=d, height=height)
         self.update_sto(s=s)
         self.update_ghb(d=d, c=c)
-        self.udpate_rch(f=f)
+        self.update_rch(f=f)
         elev = d + drnheight # elvation of drain
         self.update_drn(elev=elev, cond=cond)
         self._gwf.name_file.write()
