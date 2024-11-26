@@ -19,10 +19,12 @@ class Modflow:
         head: Series | None = None,
         solver_kwargs: dict | None = None,
         raise_on_modflow_error: bool = False,
+        silent=True,
     ) -> None:
         self.exe_name = exe_name
         self.sim_ws = sim_ws
         self.raise_on_modflow_error = raise_on_modflow_error
+        self.silent = silent
         self._simulation = None
         self._gwf = None
         self._name = "mf_base"
@@ -105,7 +107,7 @@ class Modflow:
             saverecord=[("HEAD", "ALL")],
         )
 
-        self._simulation.write_simulation(silent=True)
+        self._simulation.write_simulation(silent=self.silent)
 
         if not self.constant_d_from_modflow:
             self.update_dis(d=0.0, height=1.0)
@@ -118,7 +120,7 @@ class Modflow:
     @functools.lru_cache(maxsize=5)
     def get_head(self, p):
         self.update_model(p=p)
-        success, _ = self._simulation.run_simulation(silent=True)
+        success, _ = self._simulation.run_simulation(silent=self.silent)
         if success:
             return self._gwf.output.head().get_ts((0, 0, 0))[:, 1]
         else:
@@ -196,6 +198,7 @@ class ModflowRch(Modflow):
         head: Series | None = None,
         solver_kwargs: dict | None = None,
         raise_on_modflow_error: bool = False,
+        **kwargs,
     ):
         Modflow.__init__(
             self,
@@ -204,6 +207,7 @@ class ModflowRch(Modflow):
             head=head,
             solver_kwargs=solver_kwargs,
             raise_on_modflow_error=raise_on_modflow_error,
+            **kwargs,
         )
         self._name = "mf_rch"
 
@@ -417,10 +421,7 @@ class ModflowUzf(Modflow):
         elev = top - 1e-5  # top - surfdep
         drn = flopy.mf6.ModflowGwfdrn(
             self._gwf,
-            print_input=True,
-            print_flows=True,
             save_flows=False,
-            boundnames=True,
             maxbound=1,
             stress_period_data={0: [[(0, 0, 0), elev, 1e10]]},
             pname="drn",
@@ -448,31 +449,17 @@ class ModflowUzf(Modflow):
 
 
 class ModflowDrn(ModflowRch):
-    def __init__(
-        self,
-        exe_name: str,
-        sim_ws: str,
-        head: Series | None = None,
-        solver_kwargs: dict | None = None,
-        raise_on_modflow_error: bool = False,
-    ):
-        ModflowRch.__init__(
-            self,
-            exe_name=exe_name,
-            sim_ws=sim_ws,
-            head=head,
-            solver_kwargs=solver_kwargs,
-            raise_on_modflow_error=raise_on_modflow_error,
-        )
+    def __init__(self, **kwargs):
+        ModflowRch.__init__(self, **kwargs)
         self._name = "mf_drn"
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = ModflowRch.get_init_parameters(self, name)
-        parameters.loc[name + "_drnheight"] = (1.0, 0.0, 10.0, True, name, "uniform")
-        parameters.loc[name + "_cond"] = (10.0, 1.0, 1000.0, True, name, "uniform")
+        parameters.loc[name + "_h_drn"] = (1.0, 0.0, 10.0, True, name, "uniform")
+        parameters.loc[name + "_c_drn"] = (220, 1e1, 1e8, True, name, "uniform")
         return parameters
 
-    def update_drn(self, elev: float, cond: float):
+    def update_drn(self, d: float, c: float):
         drn = flopy.mf6.ModflowGwfdrn(
             self._gwf,
             print_input=True,
@@ -480,24 +467,63 @@ class ModflowDrn(ModflowRch):
             save_flows=False,
             boundnames=True,
             maxbound=1,
-            stress_period_data={0: [[(0, 0, 0), elev, cond]]},
+            stress_period_data={0: [[(0, 0, 0), d, 1 / c]]},
             pname="drn",
         )
         drn.write()
 
     def update_model(self, p: ArrayLike):
         if self.constant_d_from_modflow:
-            d, c, s, f, drnheight, cond = p[0:6]
+            d = p[0]
+            p = p[1:]
             self.update_ic(d=d)
         else:
-            c, s, f, drnheight, cond = p[0:5]
             d = 0.0
-
-        height = d + drnheight + 1.0 # height of cell should be above drain elevation. check if this is correct, could maybe also be without +1.0?
-        self.update_dis(d=d, height=height)
+        c, s, f, h_drn, c_drn = p
+        self.update_dis(d=0, height=1.0)
         self.update_sto(s=s)
         self.update_ghb(d=d, c=c)
         self.update_rch(f=f)
-        elev = d + drnheight # elvation of drain
-        self.update_drn(elev=elev, cond=cond)
+        self.update_drn(d=d + h_drn, c=c_drn)
+        self._gwf.name_file.write()
+
+
+class ModflowTarso(ModflowDrn):
+    def __init__(self, **kwargs):
+        ModflowDrn.__init__(self, **kwargs)
+        self._name = "mf_tarso"
+
+    def get_init_parameters(self, name: str) -> DataFrame:
+        parameters = ModflowDrn.get_init_parameters(self, name)
+        parameters.loc[name + "_s_drn"] = (0.001, 0.3, 1.0, True, name, "uniform")
+        return parameters
+
+    def update_sto(self, s: float, s_drn: float):
+        self._remove_changing_package("STO")
+        haq = (self._gwf.dis.top.array - self._gwf.dis.botm.array)[0]
+        sto = flopy.mf6.ModflowGwfsto(
+            self._gwf,
+            save_flows=False,
+            iconvert=1,
+            ss=s_drn / haq,
+            sy=s,
+            transient=True,
+            pname="sto",
+            ss_confined_only=True,
+        )
+        sto.write()
+
+    def update_model(self, p: ArrayLike):
+        if self.constant_d_from_modflow:
+            d = p[0]
+            p = p[1:]
+            self.update_ic(d=d)
+        else:
+            d = 0.0
+        c, s, f, h_drn, c_drn, s_drn = p
+        self.update_dis(d=0, height=d + h_drn)
+        self.update_sto(s=s, s_drn=s_drn)
+        self.update_ghb(d=d, c=c)
+        self.update_rch(f=f)
+        self.update_drn(d=d + h_drn, c=c_drn)
         self._gwf.name_file.write()
