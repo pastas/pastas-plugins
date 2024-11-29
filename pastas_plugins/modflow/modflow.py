@@ -529,7 +529,7 @@ class ModflowSto(ModflowRch):
         self._gwf.name_file.write()
 
 
-class ModflowDrnSto(ModflowDrn):
+class ModflowDrnSto(ModflowDrn, ModflowSto):
     def __init__(self, **kwargs):
         ModflowDrn.__init__(self, **kwargs)
         self._name = "mf_drn_sto"
@@ -538,21 +538,6 @@ class ModflowDrnSto(ModflowDrn):
         parameters = ModflowDrn.get_init_parameters(self, name)
         parameters.loc[name + "_s_drn"] = (0.3, 0.001, 1.0, True, name, "uniform")
         return parameters
-
-    def update_sto(self, s: float, s_drn: float):
-        self._remove_changing_package("STO")
-        haq = (self._gwf.dis.top.array - self._gwf.dis.botm.array)[0]
-        sto = flopy.mf6.ModflowGwfsto(
-            self._gwf,
-            save_flows=False,
-            iconvert=1,
-            ss=s_drn / haq,
-            sy=s,
-            transient=True,
-            pname="sto",
-            ss_confined_only=True,
-        )
-        sto.write()
 
     def update_model(self, p: ArrayLike):
         if self.constant_d_from_modflow:
