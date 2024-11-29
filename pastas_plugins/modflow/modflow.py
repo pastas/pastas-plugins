@@ -488,14 +488,55 @@ class ModflowDrn(ModflowRch):
         self._gwf.name_file.write()
 
 
-class ModflowTarso(ModflowDrn):
+class ModflowSto(ModflowRch):
+    def __init__(self, **kwargs):
+        ModflowRch.__init__(self, **kwargs)
+        self._name = "mf_sto"
+
+    def get_init_parameters(self, name: str) -> DataFrame:
+        parameters = ModflowRch.get_init_parameters(self, name)
+        parameters.loc[name + "_h_drn"] = (1.0, 0.0, 10.0, True, name, "uniform")
+        parameters.loc[name + "_s_drn"] = (0.3, 0.001, 1.0, True, name, "uniform")
+        return parameters
+
+    def update_sto(self, s: float, s_drn: float):
+        self._remove_changing_package("STO")
+        haq = (self._gwf.dis.top.array - self._gwf.dis.botm.array)[0]
+        sto = flopy.mf6.ModflowGwfsto(
+            self._gwf,
+            save_flows=False,
+            iconvert=1,
+            ss=s_drn / haq,
+            sy=s,
+            transient=True,
+            pname="sto",
+            ss_confined_only=True,
+        )
+        sto.write()
+
+    def update_model(self, p: ArrayLike):
+        if self.constant_d_from_modflow:
+            d = p[0]
+            p = p[1:]
+            self.update_ic(d=d)
+        else:
+            d = 0.0
+        c, s, f, h_drn, s_drn = p
+        self.update_dis(d=0, height=d + h_drn)
+        self.update_sto(s=s, s_drn=s_drn)
+        self.update_ghb(d=d, c=c)
+        self.update_rch(f=f)
+        self._gwf.name_file.write()
+
+
+class ModflowDrnSto(ModflowDrn):
     def __init__(self, **kwargs):
         ModflowDrn.__init__(self, **kwargs)
-        self._name = "mf_tarso"
+        self._name = "mf_drn_sto"
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = ModflowDrn.get_init_parameters(self, name)
-        parameters.loc[name + "_s_drn"] = (0.001, 0.3, 1.0, True, name, "uniform")
+        parameters.loc[name + "_s_drn"] = (0.3, 0.001, 1.0, True, name, "uniform")
         return parameters
 
     def update_sto(self, s: float, s_drn: float):
