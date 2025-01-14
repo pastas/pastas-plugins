@@ -573,7 +573,7 @@ class PestIesSolver(PestSolver):
             The correlation coefficient of the observation noise, by default 0.0.
         ies_parameter_ensemble_method : Optional[Literal["norm", "truncnorm", "uniform"]], optional
             The method to distribution of the prior for the parameter ensemble, by default None.
-            If None the parameter distribution is drwan by pestpp-ies itself.
+            If None the parameter distribution is drawn by pestpp-ies itself.
         pestpp_options : Optional[Dict], optional
             Additional PEST++ options, by default None.
         Returns
