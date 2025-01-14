@@ -32,6 +32,9 @@ jobs:
           - name: Test suite for responses plugin with py312-ubuntu
             python: "3.12"
             toxenv: responses
+          - name: Test suite for responses plugin with py313-ubuntu
+            python: "3.13"
+            toxenv: responses
           - name: Test suite for reservoirs plugin with py310-ubuntu
             python: "3.10"
             toxenv: reservoirs
@@ -41,6 +44,9 @@ jobs:
           - name: Test suite for reservoirs plugin with py312-ubuntu
             python: "3.12"
             toxenv: reservoirs
+          - name: Test suite for reservoirs plugin with py313-ubuntu
+            python: "3.13"
+            toxenv: reservoirs
           - name: Test suite for cross_correlation plugin with py310-ubuntu
             python: "3.10"
             toxenv: cross_correlation
@@ -49,6 +55,9 @@ jobs:
             toxenv: cross_correlation
           - name: Test suite for cross_correlation plugin with py312-ubuntu
             python: "3.12"
+            toxenv: cross_correlation
+          - name: Test suite for cross_correlation plugin with py312-ubuntu
+            python: "3.13"
             toxenv: cross_correlation
           - name: Test suite for all unit tests
             python: "3.10"
