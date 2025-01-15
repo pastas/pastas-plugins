@@ -19,8 +19,8 @@ release = __version__
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "pastas_plugins"
-copyright = "2024, D.A. Brakenhoff"
-author = "D.A. Brakenhoff"
+copyright = "2024, D.A. Brakenhoff, M.A. Vonk & M. Bakker"
+author = "D.A. Brakenhoff, M.A. Vonk & M. Bakker"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
