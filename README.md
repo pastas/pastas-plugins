@@ -12,6 +12,7 @@ The following plugins are now available:
 - **`modflow`**: use modflow models as response functions.
 - **`reservoirs`**: use reservoir models to simulate time series.
 - **`responses`**: custom response functions for Pastas.
+- **`pest`**: PEST(++) solver for Pastas.
 
 ## Installation
 
@@ -46,7 +47,7 @@ This gives you access to the following functions:
 
 ```python
 pp.list_plugins()         # list of all plugins
-pp.show_plugin_versions() # show plugin versions 
+pp.show_plugin_versions() # show plugin versions
 ```
 
 The function `pp.show_plugin_versions()` will indicate if any dependencies are missing

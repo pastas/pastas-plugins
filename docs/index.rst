@@ -4,8 +4,8 @@ Pastas Plugins
 Welcome to the pastas-plugins repository, your one-stop-shop for customized,
 cutting-edge additions to Pastas.
 
-Pastas plugins are a way to extend the functionality of Pastas. This repository aims to 
-provide a template for developing, documenting and testing plugins so that they can be 
+Pastas plugins are a way to extend the functionality of Pastas. This repository aims to
+provide a template for developing, documenting and testing plugins so that they can be
 shared with the Pastas community.
 
 Check out the documentation for the plugins that are currently included below, or check
@@ -19,11 +19,12 @@ The following plugins are currently available:
 - :ref:`Modflow <modflow>`: using a Modflow model as a response function in Pastas.
 - :ref:`Reservoirs <reservoirs>`: use reservoir models to simulate time series.
 - :ref:`Responses <responses>`: extra response functions for Pastas.
+- :ref:`PEST <pest>`: PEST(++) solver for Pastas.
 
 Installation
 ------------
 To install the plugins, you can use pip::
-   
+
       pip install pastas-plugins
 
 If you want to use a specific plugin and want to ensure you install all the requisite
@@ -32,7 +33,7 @@ dependencies, you can use the following command::
       pip install pastas-plugins[<name of plugin>]
 
 If you want to install them all::
-      
+
             pip install pastas-plugins[all]
 
 Usage
@@ -49,7 +50,7 @@ This gives you access to the following functions:
 .. code-block:: python
 
       pp.list_plugins()         # list of all plugins
-      pp.show_plugin_versions() # show plugin versions 
+      pp.show_plugin_versions() # show plugin versions
 
 The function `pp.show_plugin_versions()` will indicate if any dependencies are missing
 for a particular plugin. See the :ref:`index:Installation` section above for tips on how to
