@@ -2,11 +2,13 @@ import json
 import logging
 from functools import lru_cache
 from pathlib import Path
+from pdb import run
 from platform import node as get_computername
 from shutil import copy as copy_file
 from threading import Thread
 from time import sleep
 from typing import Dict, Literal, Optional, Tuple, Union
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
@@ -18,6 +20,29 @@ from psutil import cpu_count
 from scipy.stats import norm, truncnorm
 
 logger = logging.getLogger(__name__)
+
+def run():
+    # load packages
+    from pathlib import Path
+
+    from pandas import read_csv
+    from pastas.io.base import load as load_model
+
+    # base path
+    fpath = Path(__file__).parent
+
+    # load pastas model
+    ml = load_model(fpath / "model.pas")
+
+    # update model parameters
+    parameters = read_csv(fpath / "parameters_sel.csv", index_col=0)
+    for pname, val in parameters.loc[:, "optimal"].items():
+        pname = pname.replace("_g", "_A") if pname.endswith("_g") else pname
+        ml.set_parameter(pname, optimal=val)
+
+    # simulate
+    simulation = ml.simulate()
+    simulation.loc[ml.observations().index].to_csv(fpath / "simulation.csv")
 
 
 class PestSolver(BaseSolver):
@@ -77,35 +102,9 @@ class PestSolver(BaseSolver):
             longnames=long_names,
         )
         copy_file(self.exe_name, self.temp_ws)  # copy pest executable
-        self.noptmax = noptmax
-        self.control_data = control_data
-        self.run_function = """def run():
-    # load packages
-    from pathlib import Path
-
-    from pandas import read_csv
-    from pastas.io.base import load as load_model
-
-    # base path
-    fpath = Path(__file__).parent
-
-    # load pastas model
-    ml = load_model(fpath / "model.pas")
-
-    # update model parameters
-    parameters = read_csv(fpath / "parameters_sel.csv", index_col=0)
-    for pname, val in parameters.loc[:, "optimal"].items():
-        pname = pname.replace("_g", "_A") if pname.endswith("_g") else pname
-        ml.set_parameter(pname, optimal=val)
-
-    # simulate
-    simulation = ml.simulate()
-    simulation.loc[ml.observations().index].to_csv(fpath / "simulation.csv")"""
-
-    def write_run_function(self):
-        """Write the run function to a file"""
-        with (self.model_ws / "_run_pastas_model.py").open("w") as f:
-            f.write(self.run_function)
+        self.noptmax: int = noptmax
+        self.control_data: dict = control_data
+        self.run_function: Callable = run
 
     def setup_model(self):
         """Setup and export Pastas model for PEST optimization"""
@@ -143,8 +142,6 @@ class PestSolver(BaseSolver):
         self.ml.to_file(self.model_ws / "model.pas")
         copy_file(self.model_ws / "model.pas", self.temp_ws)
 
-        # write run function
-        self.write_run_function()
 
     def write_pst(self, pst: pyemu.Pst, version: int = 2) -> None:
         """Write pest control file
@@ -192,7 +189,7 @@ class PestSolver(BaseSolver):
 
         # python scripts to run
         self.pf.add_py_function(
-            self.model_ws / "_run_pastas_model.py", "run()", is_pre_cmd=None
+            self.run_function, "run()", is_pre_cmd=None
         )
         self.pf.mod_py_cmds.append("run()")
 
