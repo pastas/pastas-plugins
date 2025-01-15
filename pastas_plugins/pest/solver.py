@@ -126,11 +126,15 @@ class PestSolver(BaseSolver):
         if "constant_d" in parameters.index:
             if np.isnan(parameters.at["constant_d", "pmin"]):
                 self.ml.set_parameter(
-                    "constant_d", pmin=parameters.at["constant_d", "initial"] - 4 * np.std(observations.values)
+                    "constant_d",
+                    pmin=parameters.at["constant_d", "initial"]
+                    - 4 * np.std(observations.values),
                 )
             if np.isnan(parameters.at["constant_d", "pmax"]):
                 self.ml.set_parameter(
-                    "constant_d", pmax=parameters.at["constant_d", "initial"] + 4 * np.std(observations.values)
+                    "constant_d",
+                    pmax=parameters.at["constant_d", "initial"]
+                    + 4 * np.std(observations.values),
                 )
 
         par_sel = parameters.loc[:, ["optimal"]]
