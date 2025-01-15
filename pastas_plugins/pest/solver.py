@@ -109,6 +109,13 @@ class PestSolver(BaseSolver):
 
     def setup_model(self):
         """Setup and export Pastas model for PEST optimization"""
+        # observations
+        observations = self.ml.observations()
+        observations.name = "Observations"
+        observations.to_csv(self.model_ws / "simulation.csv")
+        copy_file(self.model_ws / "simulation.csv", self.temp_ws)
+        self.observations = observations
+
         # setup parameters
         self.ml.parameters.loc[:, "optimal"] = self.ml.parameters.loc[:, "initial"]
         self.vary = self.ml.parameters.vary.values.astype(bool)
@@ -120,24 +127,17 @@ class PestSolver(BaseSolver):
         if "constant_d" in parameters.index:
             if np.isnan(parameters.at["constant_d", "pmin"]):
                 self.ml.set_parameter(
-                    "constant_d", pmin=parameters.at["constant_d", "initial"] - 10.0
+                    "constant_d", pmin=parameters.at["constant_d", "initial"] - 4 * np.std(observations.values)
                 )
             if np.isnan(parameters.at["constant_d", "pmax"]):
                 self.ml.set_parameter(
-                    "constant_d", pmax=parameters.at["constant_d", "initial"] + 10.0
+                    "constant_d", pmax=parameters.at["constant_d", "initial"] + 4 * np.std(observations.values)
                 )
 
         par_sel = parameters.loc[:, ["optimal"]]
         par_sel.to_csv(self.model_ws / "parameters_sel.csv")
         copy_file(self.model_ws / "parameters_sel.csv", self.temp_ws)
         self.par_sel = par_sel
-
-        # observations
-        observations = self.ml.observations()
-        observations.name = "Observations"
-        observations.to_csv(self.model_ws / "simulation.csv")
-        copy_file(self.model_ws / "simulation.csv", self.temp_ws)
-        self.observations = observations
 
         # model
         self.ml.to_file(self.model_ws / "model.pas")
