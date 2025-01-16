@@ -13,3 +13,4 @@ below to read more about each plugin.
    Modflow <modflow>
    Reservoirs <reservoirs>
    Responses <responses>
+   PEST <pest>

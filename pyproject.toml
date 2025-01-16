@@ -15,7 +15,7 @@ maintainers = [
         { name = "M. Bakker", email = "markbak@gmail.com" },
 ]
 
-requires-python = ">= 3.9"
+requires-python = ">= 3.10"
 dependencies = ["pastas"]
 keywords = ["hydrology", "groundwater", "timeseries", "analysis"]
 classifiers = [
@@ -24,10 +24,10 @@ classifiers = [
         'Intended Audience :: Other Audience',
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python :: 3 :: Only',
-        'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
         'Topic :: Scientific/Engineering :: Hydrology',
 ]
 
@@ -40,6 +40,7 @@ documentation = "https://pastas.readthedocs.io"
 all = ["pastas_plugins[modflow,crosscorrelation]"]
 crosscorrelation = ["statsmodels"]
 modflow = ["flopy"]
+pest = ["pyemu"]
 reservoirs = ["pastas_plugins"] # placeholder for empty dependencies
 responses = ["pastas_plugins"] # placeholder for empty dependencies
 ruffing = ["ruff"]
@@ -63,12 +64,11 @@ lint.extend-select = ["I"]
 show-fixes = true
 fix = true
 
-
 [tool.tox]
 legacy_tox_ini = """
     [tox]
     requires = tox>=4
-    env_list = py{39,310,311,312}
+    env_list = py{310,311,312,313}
 
     [testenv:all]
     description = run all unit tests and obtain coverage
