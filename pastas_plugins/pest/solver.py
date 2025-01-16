@@ -1,14 +1,13 @@
 import json
 import logging
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
-from pdb import run
 from platform import node as get_computername
 from shutil import copy as copy_file
 from threading import Thread
 from time import sleep
 from typing import Dict, Literal, Optional, Tuple, Union
-from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
@@ -20,6 +19,7 @@ from psutil import cpu_count
 from scipy.stats import norm, truncnorm
 
 logger = logging.getLogger(__name__)
+
 
 def run():
     # load packages
@@ -144,7 +144,6 @@ class PestSolver(BaseSolver):
         self.ml.to_file(self.model_ws / "model.pas")
         copy_file(self.model_ws / "model.pas", self.temp_ws)
 
-
     def write_pst(self, pst: pyemu.Pst, version: int = 2) -> None:
         """Write pest control file
 
@@ -190,9 +189,7 @@ class PestSolver(BaseSolver):
         )
 
         # python scripts to run
-        self.pf.add_py_function(
-            self.run_function, "run()", is_pre_cmd=None
-        )
+        self.pf.add_py_function(self.run_function, "run()", is_pre_cmd=None)
         self.pf.mod_py_cmds.append("run()")
 
         # create control file
