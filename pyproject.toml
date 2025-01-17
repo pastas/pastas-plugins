@@ -40,7 +40,7 @@ documentation = "https://pastas.readthedocs.io"
 all = ["pastas_plugins[modflow,crosscorrelation]"]
 crosscorrelation = ["statsmodels"]
 modflow = ["flopy"]
-pest = ["pyemu"]
+pest = ["pyemu>=1.3.8"]
 reservoirs = ["pastas_plugins"] # placeholder for empty dependencies
 responses = ["pastas_plugins"] # placeholder for empty dependencies
 ruffing = ["ruff"]
