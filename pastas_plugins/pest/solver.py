@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import pyemu
 from pandas import DataFrame
+from pastas import Model
 from pastas.solver import BaseSolver
 from pastas.typing import TimestampType
 from psutil import cpu_count
@@ -21,7 +22,7 @@ from scipy.stats import norm, truncnorm
 logger = logging.getLogger(__name__)
 
 
-def run():
+def run() -> None:
     # load packages
     from pathlib import Path
 
@@ -45,6 +46,36 @@ def run():
     simulation.loc[ml.observations().index].to_csv(fpath / "simulation.csv")
 
 
+def run_pypestworker(
+    pst: str | pyemu.pst.PstHandler,
+    host: int,
+    port: int,
+    ml: Model,
+) -> None:
+    ppw = pyemu.os_utils.PyPestWorker(
+        pst=pst,
+        host=host,
+        port=port,
+        verbose=False,
+    )
+    pvals = ppw.get_parameters()
+    if pvals is None:
+        return None
+
+    while True:
+        for pname, val in pvals.items():
+            pname = pname.split(":")[-1] if ":" in pname else pname
+            pname = pname.replace("_g", "_A") if pname.endswith("_g") else pname
+            ml.set_parameter(pname, optimal=val)
+        sim = ml.simulate()
+        obsvals = sim.loc[ml.observations().index]
+        obsvals.index = ppw._pst.observation_data.index
+        ppw.send_observations(obsvals=obsvals)
+        pvals = ppw.get_parameters()
+        if pvals is None:
+            break
+
+
 class PestSolver(BaseSolver):
     """PEST solver base class"""
 
@@ -58,6 +89,7 @@ class PestSolver(BaseSolver):
         pcov: Optional[DataFrame] = None,
         nfev: Optional[int] = None,
         long_names: bool = True,
+        use_pypestworker: bool = True,
         **kwargs,
     ) -> None:
         """Initialize the PEST solver.
@@ -80,6 +112,8 @@ class PestSolver(BaseSolver):
             The number of function evaluations. Default is None.
         long_names : bool, optional
             Whether to use long names in the PEST control file. Default is True.
+        use_pypestworker : bool, optional
+            Whether to use the PyPestWorker for Python processing. Default is True.
         **kwargs : dict
             Additional keyword arguments passed to the BaseSolver.
 
@@ -104,7 +138,9 @@ class PestSolver(BaseSolver):
         copy_file(self.exe_name, self.temp_ws)  # copy pest executable
         self.noptmax: int = noptmax
         self.control_data: dict = control_data
+        self.use_pypestworker: bool = use_pypestworker
         self.run_function: Callable = run
+        self.ppw_function: Callable = run_pypestworker
 
     def setup_model(self):
         """Setup and export Pastas model for PEST optimization"""
@@ -614,11 +650,21 @@ class PestIesSolver(PestSolver):
             exe_rel_path=self.exe_name.name,  # the PEST software version we want to run
             pst_rel_path="pest.pst",  # the control file to use with PEST
             num_workers=self.num_workers,  # how many agents to deploy
-            worker_root=self.master_ws.parent,  # where to deploy the agent directories; relative to where python is running
+            worker_root=self.temp_ws.parent
+            if self.use_pypestworker
+            else self.master_ws.parent,  # where to deploy the agent directories; relative to where python is running
+            master_dir=self.temp_ws
+            if self.use_pypestworker
+            else self.master_ws,  # the manager directory
             port=self.port_number,  # the port to use for communication
-            master_dir=self.master_ws,  # the manager directory
             verbose=silent,
             silent_master=silent,
+            ppw_function=self.ppw_function
+            if self.use_pypestworker
+            else None,  # the function to run in the agent
+            ppw_kwargs={"ml": self.ml}
+            if self.use_pypestworker
+            else {},  # the arguments to pass to the ppw_function
         )
 
         phidf = pd.read_csv(self.master_ws / "pest.phi.meas.csv", index_col=0)
