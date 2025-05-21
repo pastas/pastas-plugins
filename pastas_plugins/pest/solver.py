@@ -350,7 +350,20 @@ class PestGlmSolver(PestSolver):
 
         self.setup_model()
         self.setup_files()
-        self.run()
+        if self.use_pypestworker:
+            pyemu.os_utils.start_workers(
+                worker_dir=self.temp_ws,  # the folder which contains the "template" PEST dataset
+                exe_rel_path=self.exe_name.name,  # the PEST software version we want to run
+                pst_rel_path="pest.pst",  # the control file to use with PEST
+                num_workers=1,  # how many agents to deploy
+                worker_root=self.temp_ws.parent,  # where to deploy the agent directories; relative to where python is running
+                master_dir=self.temp_ws,  # the manager directory
+                reuse_master=self.use_pypestworker,
+                ppw_function=self.ppw_function,
+                ppw_kwargs={"ml": self.ml},
+            )
+        else:
+            self.run()
 
         # optimal parameters
         ipar = pd.read_csv(self.temp_ws / "pest.ipar", index_col=0).transpose()
@@ -1156,6 +1169,7 @@ class PestSenSolver(PestSolver):
             temp_ws=temp_ws,
             pcov=pcov,
             nfev=nfev,
+            use_pypestworker=use_pypestworker,
             **kwargs,
         )
         self.master_ws = temp_ws if self.use_pypestworker else master_ws
@@ -1206,6 +1220,12 @@ class PestSenSolver(PestSolver):
             reuse_master=self.use_pypestworker,
             verbose=silent,
             silent_master=silent,
+            ppw_function=self.ppw_function
+            if self.use_pypestworker
+            else None,  # the function to run in the agent
+            ppw_kwargs={"ml": self.ml}
+            if self.use_pypestworker
+            else {},  # the arguments to pass to the ppw_function
         )
 
     def solve() -> None:
