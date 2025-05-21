@@ -48,7 +48,7 @@ def run() -> None:
 
 
 def run_pypestworker(
-    pst: str | pyemu.pst.PstHandler,
+    pst: str | pyemu.Pst,
     host: int,
     port: int,
     ml: Model,
@@ -666,6 +666,7 @@ class PestIesSolver(PestSolver):
             port=self.port_number,  # the port to use for communication
             verbose=silent,
             silent_master=silent,
+            reuse_master=self.use_pypestworker,
             ppw_function=self.ppw_function
             if self.use_pypestworker
             else None,  # the function to run in the agent
@@ -1202,6 +1203,7 @@ class PestSenSolver(PestSolver):
             worker_root=self.master_ws.parent,  # where to deploy the agent directories; relative to where python is running
             port=self.port_number,  # the port to use for communication
             master_dir=self.master_ws,  # the manager directory
+            reuse_master=self.use_pypestworker,
             verbose=silent,
             silent_master=silent,
         )
