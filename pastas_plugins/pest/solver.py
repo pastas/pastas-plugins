@@ -280,6 +280,7 @@ class PestGlmSolver(PestSolver):
         control_data: Optional[dict] = None,
         pcov: Optional[DataFrame] = None,
         nfev: Optional[int] = None,
+        use_pypestworker: bool = True,
         **kwargs,
     ) -> None:
         """
@@ -301,6 +302,8 @@ class PestGlmSolver(PestSolver):
             The parameter covariance matrix. Default is None.
         nfev : Optional[int], optional
             The number of function evaluations. Default is None.
+        use_pypestworker : bool, optional
+            Whether to use the PyPestWorker for Python processing. Default is True.
         **kwargs : dict
             Additional keyword arguments passed to the PestSolver.
 
@@ -317,6 +320,7 @@ class PestGlmSolver(PestSolver):
             control_data=control_data,
             pcov=pcov,
             nfev=nfev,
+            use_pypestworker=use_pypestworker,
             long_names=True,
             **kwargs,
         )
@@ -431,6 +435,7 @@ class PestHpSolver(PestSolver):
             long_names=False,
             noptmax=noptmax,
             control_data=control_data,
+            use_pypestworker=False,
             **kwargs,
         )
         self.exe_agent = Path(exe_agent)
@@ -520,6 +525,7 @@ class PestIesSolver(PestSolver):
         nfev: Optional[int] = None,
         port_number: int = 4004,
         num_workers: Optional[int] = None,
+        use_pypestworker: bool = True,
         **kwargs,
     ) -> None:
         """
@@ -534,7 +540,8 @@ class PestIesSolver(PestSolver):
         temp_ws : Union[str, Path], optional
             The temporary working directory, by default Path("temp").
         master_ws : Union[str, Path], optional
-            The master working directory, by default Path("master").
+            The master working directory, by default Path("master") unless
+            use_pypestworker is True, then master_ws is equal to temp_ws.
         noptmax : int, optional
             The maximum number of optimization iterations, by default 0.
         ies_num_reals : int, optional
@@ -549,6 +556,8 @@ class PestIesSolver(PestSolver):
             The port number for communication, by default 4004.
         num_workers : Optional[int], optional
             The number of worker processes, by default the number of physical CPU cores.
+        use_pypestworker : bool, optional
+            Whether to use the PyPestWorker for Python processing. Default is True.
         **kwargs
             Additional keyword arguments passed to the base class initializer.
 
@@ -564,9 +573,11 @@ class PestIesSolver(PestSolver):
             temp_ws=temp_ws,
             pcov=pcov,
             nfev=nfev,
+            use_pypestworker=use_pypestworker,
             **kwargs,
         )
-        self.master_ws = master_ws
+
+        self.master_ws = temp_ws if self.use_pypestworker else master_ws
         self.noptmax = noptmax
         self.ies_num_reals = ies_num_reals
         self.control_data = control_data
@@ -650,12 +661,8 @@ class PestIesSolver(PestSolver):
             exe_rel_path=self.exe_name.name,  # the PEST software version we want to run
             pst_rel_path="pest.pst",  # the control file to use with PEST
             num_workers=self.num_workers,  # how many agents to deploy
-            worker_root=self.temp_ws.parent
-            if self.use_pypestworker
-            else self.master_ws.parent,  # where to deploy the agent directories; relative to where python is running
-            master_dir=self.temp_ws
-            if self.use_pypestworker
-            else self.master_ws,  # the manager directory
+            worker_root=self.master_ws.parent,  # where to deploy the agent directories; relative to where python is running
+            master_dir=self.master_ws,  # the manager directory
             port=self.port_number,  # the port to use for communication
             verbose=silent,
             silent_master=silent,
@@ -1101,6 +1108,7 @@ class PestSenSolver(PestSolver):
         nfev: Optional[int] = None,
         port_number: int = 4004,
         num_workers: Optional[int] = None,
+        use_pypestworker: bool = True,
         **kwargs,
     ) -> None:
         """
@@ -1116,7 +1124,8 @@ class PestSenSolver(PestSolver):
         temp_ws : Union[str, Path], optional
             The temporary working directory, by default Path("temp").
         master_ws : Union[str, Path], optional
-            The master working directory, by default Path("master").
+            The master working directory, by default Path("master") unless
+            use_pypestworker is True, then master_ws is equal to temp_ws.
         noptmax : int, optional
             The maximum number of optimization iterations, by default 0.
         control_data : Optional[dict], optional
@@ -1129,6 +1138,8 @@ class PestSenSolver(PestSolver):
             The port number for communication, by default 4004.
         num_workers : Optional[int], optional
             The number of worker processes, by default the number of physical CPU cores.
+        use_pypestworker : bool, optional
+            Whether to use the PyPestWorker for Python processing. Default is True.
         **kwargs
             Additional keyword arguments.
 
@@ -1145,7 +1156,7 @@ class PestSenSolver(PestSolver):
             nfev=nfev,
             **kwargs,
         )
-        self.master_ws = master_ws
+        self.master_ws = temp_ws if self.use_pypestworker else master_ws
         self.noptmax = noptmax
         self.control_data = control_data
         self.port_number = port_number
