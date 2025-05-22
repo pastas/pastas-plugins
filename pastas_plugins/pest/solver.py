@@ -90,6 +90,7 @@ class PestSolver(BaseSolver):
         pcov: DataFrame | None = None,
         nfev: int | None = None,
         long_names: bool = True,
+        port_number: int = 4004,
         use_pypestworker: bool = True,
         **kwargs,
     ) -> None:
@@ -113,6 +114,8 @@ class PestSolver(BaseSolver):
             The number of function evaluations. Default is None.
         long_names : bool, optional
             Whether to use long names in the PEST control file. Default is True.
+        port_number : int, optional
+            The port number for communication. Default is 4004.
         use_pypestworker : bool, optional
             Whether to use the PyPestWorker for Python processing. Default is True.
         **kwargs : dict
@@ -139,6 +142,7 @@ class PestSolver(BaseSolver):
         copy_file(self.exe_name, self.temp_ws)  # copy pest executable
         self.noptmax: int = noptmax
         self.control_data: dict[str, Any] = control_data
+        self.port_number = port_number
         self.use_pypestworker: bool = use_pypestworker
         self.run_function: Callable = run
         self.ppw_function: Callable = run_pypestworker
@@ -281,6 +285,7 @@ class PestGlmSolver(PestSolver):
         control_data: dict[str, Any] | None = None,
         pcov: DataFrame | None = None,
         nfev: int | None = None,
+        port_number: int = 4004,
         use_pypestworker: bool = True,
         **kwargs,
     ) -> None:
@@ -303,6 +308,8 @@ class PestGlmSolver(PestSolver):
             The parameter covariance matrix. Default is None.
         nfev : int | None, optional
             The number of function evaluations. Default is None.
+        port_number : int, optional
+            The port number for communication. Default is 4004.
         use_pypestworker : bool, optional
             Whether to use the PyPestWorker for Python processing. Default is True.
         **kwargs : dict
@@ -321,6 +328,7 @@ class PestGlmSolver(PestSolver):
             control_data=control_data,
             pcov=pcov,
             nfev=nfev,
+            port_number=port_number,
             use_pypestworker=use_pypestworker,
             long_names=True,
             **kwargs,
@@ -356,6 +364,7 @@ class PestGlmSolver(PestSolver):
                 exe_rel_path=self.exe_name.name,  # the PEST software version we want to run
                 pst_rel_path="pest.pst",  # the control file to use with PEST
                 num_workers=1,  # how many agents to deploy
+                port=self.port_number,  # the port to use for communication
                 worker_root=self.temp_ws.parent,  # where to deploy the agent directories; relative to where python is running
                 master_dir=self.temp_ws,  # the manager directory
                 reuse_master=self.use_pypestworker,
@@ -449,11 +458,11 @@ class PestHpSolver(PestSolver):
             long_names=False,
             noptmax=noptmax,
             control_data=control_data,
+            port_number=port_number,
             use_pypestworker=False,
             **kwargs,
         )
         self.exe_agent = Path(exe_agent)
-        self.port_number = port_number
         self.computername = get_computername()
         copy_file(self.exe_agent, self.temp_ws)  # copy agent executable
 
@@ -587,6 +596,7 @@ class PestIesSolver(PestSolver):
             temp_ws=temp_ws,
             pcov=pcov,
             nfev=nfev,
+            port_number=port_number,
             use_pypestworker=use_pypestworker,
             **kwargs,
         )
@@ -595,7 +605,6 @@ class PestIesSolver(PestSolver):
         self.noptmax = noptmax
         self.ies_num_reals = ies_num_reals
         self.control_data = control_data
-        self.port_number = port_number
         self.num_workers = (
             cpu_count(logical=False) if num_workers is None else num_workers
         )
@@ -1169,13 +1178,13 @@ class PestSenSolver(PestSolver):
             temp_ws=temp_ws,
             pcov=pcov,
             nfev=nfev,
+            port_number=port_number,
             use_pypestworker=use_pypestworker,
             **kwargs,
         )
         self.master_ws = temp_ws if self.use_pypestworker else master_ws
         self.noptmax = noptmax
         self.control_data = control_data
-        self.port_number = port_number
         self.num_workers = (
             cpu_count(logical=False) if num_workers is None else num_workers
         )
