@@ -521,13 +521,12 @@ class ModflowSto(ModflowRch):
             self.update_ic(d=d)
         else:
             d = 0.0
-        C, s, f, h_drn, s_drn = p
+        c, s, f, h_drn, s_drn = p
         self.update_dis(d=0, height=d + h_drn)
         self.update_sto(s=s, s_drn=s_drn)
-        self.update_ghb(d=d, C=C)
+        self.update_ghb(d=d, c=c)
         self.update_rch(f=f)
         self._gwf.name_file.write()
-
 
 class ModflowDrnSto(ModflowDrn, ModflowSto):
     def __init__(self, **kwargs):

@@ -175,6 +175,6 @@ cython_debug/
 /docs/examples/template
 /docs/examples/model
 /docs/examples/mf_files
-docs/examples/data/evap.csv
-docs/examples/data/obs.csv
-docs/examples/data/rain.csv
+/docs/examples/data/evap.csv
+/docs/examples/data/obs.csv
+/docs/examples/data/rain.csv
