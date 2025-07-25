@@ -66,8 +66,8 @@ class Modflow:
                 name,
                 "uniform",
             )
-        parameters.loc[name + "_c"] = (220, 1e1, 1e8, True, name, "uniform")
-        parameters.loc[name + "_s"] = (0.05, 0.001, 0.5, True, name, "uniform")
+        parameters.loc[name + "_C"] = (1e-3, 1e-5, 1e-1, True, name, "uniform")
+        parameters.loc[name + "_S"] = (0.05, 0.001, 0.5, True, name, "uniform")
         return parameters
 
     def base_model(self) -> None:
@@ -179,12 +179,12 @@ class Modflow:
         )
         sto.write()
 
-    def update_ghb(self, d: float, c: float):
+    def update_ghb(self, d: float, C: float):
         self._remove_changing_package("GHB")
         ghb = flopy.mf6.ModflowGwfghb(
             self._gwf,
             maxbound=1,
-            stress_period_data={0: [[(0, 0, 0), d, 1.0 / c]]},
+            stress_period_data={0: [[(0, 0, 0), d, C]]},
             pname="ghb",
         )
         ghb.write()
@@ -240,15 +240,15 @@ class ModflowRch(Modflow):
 
     def update_model(self, p: ArrayLike):
         if self.constant_d_from_modflow:
-            d, c, s, f = p[0:4]
+            d, C, s, f = p[0:4]
             self.update_dis(d=d, height=1.0)
             self.update_ic(d=d)
         else:
-            c, s, f = p[0:3]
+            C, s, f = p[0:3]
             d = 0.0
 
         self.update_sto(s=s)
-        self.update_ghb(d=d, c=c)
+        self.update_ghb(d=d, C=C)
         self.update_rch(f=f)
         self._gwf.name_file.write()
 
@@ -430,15 +430,15 @@ class ModflowUzf(Modflow):
 
     def update_model(self, p: ArrayLike):
         if self.constant_d_from_modflow:
-            d, c, s, height, vks, thtr, thts, thextfrac, eps, extdpfrac = p[0:10]
+            d, C, s, height, vks, thtr, thts, thextfrac, eps, extdpfrac = p[0:10]
             self.update_ic(d=d)
         else:
-            c, s, height, vks, thtr, thts, thextfrac, eps, extdpfrac = p[0:9]
+            C, s, height, vks, thtr, thts, thextfrac, eps, extdpfrac = p[0:9]
             d = 0.0
 
         self.update_dis(d=d, height=height)
         self.update_sto(s=s)
-        self.update_ghb(d=d, c=c)
+        self.update_ghb(d=d, C=C)
         self.update_drn()
         extdp = extdpfrac * height
         thext = thtr + (thts - thtr) * thextfrac
@@ -479,10 +479,10 @@ class ModflowDrn(ModflowRch):
             self.update_ic(d=d)
         else:
             d = 0.0
-        c, s, f, h_drn, c_drn = p
+        C, s, f, h_drn, c_drn = p
         self.update_dis(d=0, height=1.0)
         self.update_sto(s=s)
-        self.update_ghb(d=d, c=c)
+        self.update_ghb(d=d, C=C)
         self.update_rch(f=f)
         self.update_drn(d=d + h_drn, c=c_drn)
         self._gwf.name_file.write()
@@ -521,10 +521,10 @@ class ModflowSto(ModflowRch):
             self.update_ic(d=d)
         else:
             d = 0.0
-        c, s, f, h_drn, s_drn = p
+        C, s, f, h_drn, s_drn = p
         self.update_dis(d=0, height=d + h_drn)
         self.update_sto(s=s, s_drn=s_drn)
-        self.update_ghb(d=d, c=c)
+        self.update_ghb(d=d, C=C)
         self.update_rch(f=f)
         self._gwf.name_file.write()
 
@@ -546,10 +546,10 @@ class ModflowDrnSto(ModflowDrn, ModflowSto):
             self.update_ic(d=d)
         else:
             d = 0.0
-        c, s, f, h_drn, c_drn, s_drn = p
+        C, s, f, h_drn, c_drn, s_drn = p
         self.update_dis(d=0, height=d + h_drn)
         self.update_sto(s=s, s_drn=s_drn)
-        self.update_ghb(d=d, c=c)
+        self.update_ghb(d=d, C=C)
         self.update_rch(f=f)
         self.update_drn(d=d + h_drn, c=c_drn)
         self._gwf.name_file.write()
