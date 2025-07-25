@@ -1101,9 +1101,28 @@ class PestIesSolver(PestSolver):
             - numpy.ndarray: The optimal parameters.
             - numpy.ndarray: The standard error of the parameters.
         """
+        if "noise" in kwargs:
+            del(kwargs["noise"])  # remove noise from kwargs, not used in PestIesSolver
+        if "weights" in kwargs:
+            del(kwargs["weights"])
+
         if run_ensembles:
             self.run_ensembles(**kwargs)
 
+        optimal, stderr = self.get_solve_results()
+
+        return True, optimal, stderr
+
+    def get_solve_results(self) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """
+        Get the results of the last solve operation.
+
+        Returns
+        -------
+        tuple
+            - numpy.ndarray: The optimal parameters.
+            - numpy.ndarray: The standard error of the parameters.
+        """
         # optimal parameters
         ipar = self.parameter_ensemble(iteration=self.nfev).transpose()
         ipar.index = self.ml.parameters.index[self.vary]
@@ -1114,8 +1133,7 @@ class PestIesSolver(PestSolver):
         stderr = np.full_like(optimal, np.nan)
         stderr[self.vary] = ipar.std(axis=1) / np.sqrt(len(ipar.columns))
 
-        return True, optimal, stderr
-
+        return optimal, stderr
 
 class PestSenSolver(PestSolver):
     """PESTPP-SEN (Global Sensitivity Analysis) solver"""
