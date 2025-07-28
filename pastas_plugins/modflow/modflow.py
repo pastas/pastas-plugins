@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Literal, Protocol
+from typing import Literal, Protocol, runtime_checkable
 
 import flopy
 import numpy as np
@@ -9,6 +9,7 @@ from pastas.typing import ArrayLike
 logger = logging.getLogger(__name__)
 
 
+@runtime_checkable
 class ModflowPackage(Protocol):
     name: str
 
@@ -16,7 +17,7 @@ class ModflowPackage(Protocol):
 
     def update_package(
         self, modflow_gwf: flopy.mf6.ModflowGwf, p: ArrayLike
-    ) -> Any: ...
+    ) -> None: ...
 
     def stress() -> list[Series] | None: ...
 
@@ -39,9 +40,9 @@ class ModflowGhb:
         )
         return parameters
 
-    def update_package(
-        self, modflow_gwf: flopy.mf6.ModflowGwf, d: float, C: float
-    ) -> flopy.mf6.ModflowGwfghb:
+    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, p: ArrayLike) -> None:
+        d = p[0]
+        C = p[1]
         ghb = flopy.mf6.ModflowGwfghb(
             modflow_gwf,
             maxbound=1,
@@ -49,7 +50,6 @@ class ModflowGhb:
             pname=self._name,
         )
         ghb.write()
-        return ghb
 
     def stress(self) -> None:
         return None
@@ -80,13 +80,15 @@ class ModflowRch:
         )
         return parameters
 
-    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, f: float):
-        self._remove_changing_package("RCH")
+    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, p: ArrayLike) -> None:
+        f = p[0]
         rech = self.prec + f * self.evap
-        rts = [(i, x) for i, x in zip(range(self._nper + 1), np.append(rech, 0.0))]
+        rts = [
+            (i, x) for i, x in zip(range(modflow_gwf.nper + 1), np.append(rech, 0.0))
+        ]
 
         ts_dict = {
-            "filename": f"{self._gwf.name}.rch_ts",
+            "filename": f"{modflow_gwf.name}.rch_ts",
             "timeseries": rts,
             "time_series_namerecord": ["recharge"],
             "interpolation_methodrecord": ["stepwise"],
@@ -95,9 +97,9 @@ class ModflowRch:
         rch = flopy.mf6.ModflowGwfrch(
             modflow_gwf,
             maxbound=1,
-            pname=self.name,
             stress_period_data={0: [[(0, 0, 0), "recharge"]]},
             timeseries=ts_dict,
+            pname=self.name,
         )
         rch.write()
         rch.ts.write()
@@ -146,21 +148,11 @@ class ModflowUzf:
         )
         return parameters
 
-    def update_package(
-        self,
-        modflow_gwf: flopy.mf6.ModflowGwf,
-        vks: float,
-        thts: float,
-        thtr: float,
-        thext: float,
-        eps: float,
-        extdp: float,
-    ):
-        # d, C, s, height, vks, thtr, thts, thextfrac, eps, extdpfrac = p[0:10]
-        # extdp = extdpfrac * height
-        # thext = thtr + (thts - thtr) * thextfrac
+    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, p: ArrayLike) -> None:
+        height, vks, thtr, thts, thextfrac, eps, extdpfrac = p
+        extdp = extdpfrac * height
+        thext = thtr + (thts - thtr) * thextfrac
 
-        self._remove_changing_package("UZF")
         finf = self.prec
         pet = self.evap  # make sure et is positive!
 
@@ -202,11 +194,11 @@ class ModflowUzf:
         uzfts = [
             (i, finfi, peti)
             for i, finfi, peti in zip(
-                range(self._nper + 1), np.append(finf, 0.0), np.append(pet, 0.0)
+                range(modflow_gwf.nper + 1), np.append(finf, 0.0), np.append(pet, 0.0)
             )
         ]
         ts_dict = {
-            "filename": f"{self._gwf.name}.uzf_ts",
+            "filename": f"{modflow_gwf.name}.uzf_ts",
             "timeseries": uzfts,
             "time_series_namerecord": ["finf", "pet"],
             "interpolation_methodrecord": ["stepwise", "stepwise"],
@@ -219,7 +211,7 @@ class ModflowUzf:
         }
 
         uzf = flopy.mf6.ModflowGwfuzf(
-            self._gwf,
+            modflow_gwf,
             print_input=True,
             print_flows=True,
             save_flows=False,
@@ -250,21 +242,21 @@ class ModflowUzf:
             packagedata=uzf_pkdat,
             perioddata=perioddata,
             timeseries=ts_dict,
-            pname="uzf",
             filename=f"{self._name}.uzf",
+            pname=self._name,
         )
         uzf.write()
         uzf.ts.write()
 
         self._remove_changing_package("DRN")
-        top = self._gwf.dis.top.array[0][0]
+        top = modflow_gwf.dis.top.array[0][0]
         elev = top - 1e-5  # top - surfdep
         drn = flopy.mf6.ModflowGwfdrn(
-            self._gwf,
+            modflow_gwf,
             save_flows=False,
             maxbound=1,
             stress_period_data={0: [[(0, 0, 0), elev, 1e10]]},
-            pname="drn",
+            pname="DRN",
         )
         drn.write()
 
@@ -273,7 +265,7 @@ class ModflowUzf:
 
 
 class ModflowDrn:
-    def __init__(self, **kwargs):
+    def __init__(self):
         self._name = "DRN"
 
     def get_init_parameters(self, name: str) -> DataFrame:
@@ -290,7 +282,9 @@ class ModflowDrn:
         )
         return parameters
 
-    def update_drn(self, d: float, C: float) -> None:
+    def update_drn(self, p: ArrayLike) -> None:
+        d = p[0]
+        C = p[1]
         drn = flopy.mf6.ModflowGwfdrn(
             self._gwf,
             print_input=True,
@@ -299,7 +293,7 @@ class ModflowDrn:
             boundnames=True,
             maxbound=1,
             stress_period_data={0: [[(0, 0, 0), d, C]]},
-            pname="drn",
+            pname=self._name,
         )
         drn.write()
 
@@ -325,8 +319,9 @@ class ModflowSto:
         )
         return parameters
 
-    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, s: float, s_drn: float):
-        self._remove_changing_package("STO")
+    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, p: ArrayLike) -> None:
+        s_drn = p[0]
+        s = p[1]
         haq = (modflow_gwf.dis.top.array - modflow_gwf.dis.botm.array)[0]
         sto = flopy.mf6.ModflowGwfsto(
             modflow_gwf,
@@ -335,8 +330,8 @@ class ModflowSto:
             ss=s_drn / haq,
             sy=s,
             transient=True,
-            pname=self._name,
             ss_confined_only=True,
+            pname=self._name,
         )
         sto.write()
 
@@ -344,7 +339,7 @@ class ModflowSto:
         return None
 
 
-class ModflowDrnSto(ModflowDrn, ModflowSto):
+class ModflowDrnSto:
     def __init__(self):
         self._name = "DRN_STO"
 
@@ -353,20 +348,35 @@ class ModflowDrnSto(ModflowDrn, ModflowSto):
         parameters.loc[name + "_s_drn"] = (0.3, 0.001, 1.0, True, name, "uniform")
         return parameters
 
-    def update_model(self, p: ArrayLike):
-        if self.constant_d_from_modflow:
-            d = p[0]
-            p = p[1:]
-            self.update_ic(d=d)
-        else:
-            d = 0.0
-        C, s, f, h_drn, c_drn, s_drn = p
-        self.update_dis(d=0, height=d + h_drn)
-        self.update_sto(s=s, s_drn=s_drn)
-        self.update_ghb(d=d, C=C)
-        self.update_rch(f=f)
-        self.update_drn(d=d + h_drn, c=c_drn)
-        self._gwf.name_file.write()
+    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, p: ArrayLike) -> None:
+        d = p[0]
+        C = p[1]
+        drn = flopy.mf6.ModflowGwfdrn(
+            modflow_gwf,
+            print_input=True,
+            print_flows=True,
+            save_flows=False,
+            boundnames=True,
+            maxbound=1,
+            stress_period_data={0: [[(0, 0, 0), d, C]]},
+            pname="DRN",
+        )
+        drn.write()
+
+        s_drn = p[2]
+        s = p[3]
+        haq = (modflow_gwf.dis.top.array - modflow_gwf.dis.botm.array)[0]
+        sto = flopy.mf6.ModflowGwfsto(
+            modflow_gwf,
+            save_flows=False,
+            iconvert=1,
+            ss=s_drn / haq,
+            sy=s,
+            transient=True,
+            ss_confined_only=True,
+            pname="STO",
+        )
+        sto.write()
 
     def stress(self) -> None:
         return None
