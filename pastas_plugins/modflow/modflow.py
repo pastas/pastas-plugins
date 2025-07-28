@@ -1,6 +1,6 @@
-from abc import abstractmethod
 import functools
 import logging
+from abc import abstractmethod
 from typing import List, Literal
 
 import flopy
