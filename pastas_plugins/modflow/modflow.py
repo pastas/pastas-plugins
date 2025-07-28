@@ -4,7 +4,6 @@ from typing import Literal, Protocol, runtime_checkable
 import flopy
 import numpy as np
 from pandas import DataFrame, Series
-from pastas.typing import ArrayLike
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +15,10 @@ class ModflowPackage(Protocol):
     def get_init_parameters(self, name: str) -> DataFrame: ...
 
     def update_package(
-        self, modflow_gwf: flopy.mf6.ModflowGwf, p: ArrayLike
+        self, modflow_gwf: flopy.mf6.ModflowGwf, *args: float
     ) -> None: ...
 
-    def stress() -> list[Series] | None: ...
+    def stress() -> dict[str, Series] | None: ...
 
 
 class ModflowGhb:
@@ -40,9 +39,9 @@ class ModflowGhb:
         )
         return parameters
 
-    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, p: ArrayLike) -> None:
-        d = p[0]
-        C = p[1]
+    def update_package(
+        self, modflow_gwf: flopy.mf6.ModflowGwf, d: float, C: float
+    ) -> None:
         ghb = flopy.mf6.ModflowGwfghb(
             modflow_gwf,
             maxbound=1,
@@ -80,9 +79,8 @@ class ModflowRch:
         )
         return parameters
 
-    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, p: ArrayLike) -> None:
-        f = p[0]
-        rech = self.prec + f * self.evap
+    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, f: float) -> None:
+        rech = (self.prec + f * self.evap)
         rts = [
             (i, x) for i, x in zip(range(modflow_gwf.nper + 1), np.append(rech, 0.0))
         ]
@@ -99,13 +97,13 @@ class ModflowRch:
             maxbound=1,
             stress_period_data={0: [[(0, 0, 0), "recharge"]]},
             timeseries=ts_dict,
-            pname=self.name,
+            pname=self._name,
         )
         rch.write()
         rch.ts.write()
 
-    def stress(self) -> list[Series]:
-        return [self.prec, self.evap]
+    def stress(self) -> dict[str, Series]:
+        return {"prec": self.prec, "evap": self.evap}
 
 
 class ModflowUzf:
@@ -148,8 +146,17 @@ class ModflowUzf:
         )
         return parameters
 
-    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, p: ArrayLike) -> None:
-        height, vks, thtr, thts, thextfrac, eps, extdpfrac = p
+    def update_package(
+        self,
+        modflow_gwf: flopy.mf6.ModflowGwf,
+        height: float,
+        vks: float,
+        thtr: float,
+        thts: float,
+        eps: float,
+        thextfrac: float,
+        extdpfrac: float,
+    ) -> None:
         extdp = extdpfrac * height
         thext = thtr + (thts - thtr) * thextfrac
 
@@ -260,8 +267,8 @@ class ModflowUzf:
         )
         drn.write()
 
-    def stress(self) -> list[Series]:
-        return [self.prec, self.evap]
+    def stress(self) -> dict[str, Series]:
+        return {"prec": self.prec, "evap": self.evap}
 
 
 class ModflowDrn:
@@ -282,9 +289,7 @@ class ModflowDrn:
         )
         return parameters
 
-    def update_drn(self, p: ArrayLike) -> None:
-        d = p[0]
-        C = p[1]
+    def update_drn(self, d: float, C: float) -> None:
         drn = flopy.mf6.ModflowGwfdrn(
             self._gwf,
             print_input=True,
@@ -319,9 +324,9 @@ class ModflowSto:
         )
         return parameters
 
-    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, p: ArrayLike) -> None:
-        s_drn = p[0]
-        s = p[1]
+    def update_package(
+        self, modflow_gwf: flopy.mf6.ModflowGwf, s_drn: float, s: float
+    ) -> None:
         haq = (modflow_gwf.dis.top.array - modflow_gwf.dis.botm.array)[0]
         sto = flopy.mf6.ModflowGwfsto(
             modflow_gwf,
@@ -348,9 +353,14 @@ class ModflowDrnSto:
         parameters.loc[name + "_s_drn"] = (0.3, 0.001, 1.0, True, name, "uniform")
         return parameters
 
-    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, p: ArrayLike) -> None:
-        d = p[0]
-        C = p[1]
+    def update_package(
+        self,
+        modflow_gwf: flopy.mf6.ModflowGwf,
+        d: float,
+        C: float,
+        s_drn: float,
+        s: float,
+    ) -> None:
         drn = flopy.mf6.ModflowGwfdrn(
             modflow_gwf,
             print_input=True,
@@ -363,8 +373,6 @@ class ModflowDrnSto:
         )
         drn.write()
 
-        s_drn = p[2]
-        s = p[3]
         haq = (modflow_gwf.dis.top.array - modflow_gwf.dis.botm.array)[0]
         sto = flopy.mf6.ModflowGwfsto(
             modflow_gwf,
