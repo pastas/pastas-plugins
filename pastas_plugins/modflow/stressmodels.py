@@ -139,6 +139,13 @@ class ModflowModel(StressModelBase):
             else:
                 return np.zeros(self._nper)
 
+    def update_model(self, p: ArrayLike) -> None:
+        """Update the model with the given parameters."""
+        for name, package in self._packages.items():
+            self._remove_changing_package(package_name=name)
+            package.update_package(modflow_gwf=self._gwf, p=p)
+        self._gwf.name_file.write()
+
     def setup_modflow_simulation(self) -> None:
         sim = flopy.mf6.MFSimulation(
             sim_name=self._name,
