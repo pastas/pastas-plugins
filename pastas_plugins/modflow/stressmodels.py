@@ -1,3 +1,4 @@
+from functools import lru_cache
 from inspect import signature
 from logging import getLogger
 from pathlib import Path
@@ -11,7 +12,7 @@ from pastas.stressmodels import StressModelBase
 from pastas.timeseries import TimeSeries
 from pastas.typing import ArrayLike
 
-from .modflow import ModflowPackage
+from .modflow import ModflowDis, ModflowIc, ModflowPackage, ModflowSto
 
 logger = getLogger(__name__)
 
@@ -30,11 +31,22 @@ class ModflowModel(StressModelBase):
         raise_on_modflow_error: bool = False,
         solver_kwargs: dict[str, Any] | None = None,
     ) -> None:
+        if tmin is None:
+            if ml.settings["tmax"] is None:
+                tmin = ml.oseries.settings["tmin"] - ml.settings["warmup"]
+            else:
+                tmin = ml.settings["tmin"] - ml.settings["warmup"]
+        if tmax is None:
+            tmax = (
+                ml.settings["tmax"]
+                if ml.settings["tmax"] is not None
+                else ml.oseries.settings["tmax"]
+            )
         StressModelBase.__init__(
             self,
             name="mfsm",
-            tmin=ml.settings["tmin"] if tmin is None else tmin,
-            tmax=ml.settings["tmax"] if tmax is None else tmax,
+            tmin=tmin,
+            tmax=tmax,
             rfunc=None,
         )
         self.ml = ml
@@ -62,7 +74,11 @@ class ModflowModel(StressModelBase):
             else solver_kwargs
         )
         self.silent = silent
-        self._packages: dict[str, ModflowPackage] = {}
+        self._packages: dict[str, ModflowPackage] = {
+            "DIS": ModflowDis(),
+            "IC": ModflowIc(),
+            "STO": ModflowSto(),
+        }
         self._simulation, self._gwf = self.setup_modflow_simulation()
 
     @property
@@ -90,10 +106,10 @@ class ModflowModel(StressModelBase):
             if pack_stress is not None:
                 # make sure the stresses are in the right time range
                 for stress_name, stress_series in pack_stress.items():
-                    ts = TimeSeries(
-                        stress_series, settings=stress_name
+                    ts = TimeSeries(stress_series, settings=stress_name)
+                    ts.update_series(
+                        tmin=self.tmin, tmax=self.tmax, freq=self.ml.settings["freq"]
                     )
-                    ts.update_series(tmin=self.tmin, tmax=self.tmax, freq=self.ml.settings['freq'])
                     setattr(pack, stress_name, ts.series)
 
         self.set_init_parameters()
@@ -125,15 +141,9 @@ class ModflowModel(StressModelBase):
 
     def set_init_parameters(self) -> None:
         """Set the initial parameters back to their default values."""
-        pdf = concat(
+        self.parameters = concat(
             [p.get_init_parameters(self.name) for p in self._packages.values()], axis=0
         )
-        if self.parameters.empty:
-            self.parameters = pdf
-        else:
-            # If the model already has parameters, we need to merge them
-            self.parameters = concat([self.parameters, pdf], axis=0, ignore_index=False)
-        return pdf
 
     def to_dict(self) -> dict:
         raise NotImplementedError()
@@ -160,7 +170,7 @@ class ModflowModel(StressModelBase):
             "Block response function is not implemented for ModflowModel."
         )
 
-    # @functools.lru_cache(maxsize=5)
+    @lru_cache(maxsize=None)
     def get_head(self, p: ArrayLike) -> np.ndarray:
         self.update_model(p=p)
         success, _ = self._simulation.run_simulation(silent=self.silent)
@@ -223,11 +233,6 @@ class ModflowModel(StressModelBase):
         )
 
         sim.write_simulation(silent=self.silent)
-
-        if not self.constant_d_from_modflow:
-            self.update_dis(d=0.0, height=1.0)
-            self.update_ic(d=0.0)
-
         return sim, gwf
 
     def _remove_changing_package(self, package_name: str):
@@ -238,53 +243,16 @@ class ModflowModel(StressModelBase):
         parameters = DataFrame(
             columns=["initial", "pmin", "pmax", "vary", "name", "dist"]
         )
-        if self.constant_d_from_modflow:
-            parameters.loc[name + "_d"] = (
-                float(np.mean(self._head)),
-                min(self._head),
-                max(self._head),
-                True,
-                name,
-                "uniform",
-            )
-        parameters.loc[name + "_S"] = (0.05, 0.001, 0.5, True, name, "uniform")
+        parameters.loc[name + "_d"] = (
+            float(np.mean(self._head)),
+            min(self._head),
+            max(self._head),
+            True,
+            name,
+            "uniform",
+        )
+        parameters.loc[name + "_s"] = (0.05, 0.001, 0.5, True, name, "uniform")
         return parameters
-
-    def update_dis(self, d: float, height: float = 1.0):
-        self._remove_changing_package("DIS")
-        dis = flopy.mf6.ModflowGwfdis(
-            self._gwf,
-            length_units="METERS",
-            nlay=1,
-            nrow=1,
-            ncol=1,
-            delr=1,
-            delc=1,
-            top=d + height,
-            botm=d,
-            idomain=1,
-            pname="dis",
-        )
-        dis.write()
-
-    def update_ic(self, d: float):
-        self._remove_changing_package("IC")
-        ic = flopy.mf6.ModflowGwfic(self._gwf, strt=d, pname="ic")
-        ic.write()
-
-    def update_sto(self, s: float):
-        self._remove_changing_package("STO")
-        haq = (self._gwf.dis.top.array - self._gwf.dis.botm.array)[0]
-        sto = flopy.mf6.ModflowGwfsto(
-            self._gwf,
-            save_flows=False,
-            iconvert=0,
-            ss=s / haq,
-            sy=0.0,  # just to show the specific yield is not needed
-            transient=True,
-            pname="sto",
-        )
-        sto.write()
 
 
 solver_kwargs_uzf = dict(

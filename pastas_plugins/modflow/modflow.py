@@ -21,6 +21,111 @@ class ModflowPackage(Protocol):
     def stress() -> dict[str, Series] | None: ...
 
 
+class ModflowDis:
+    def __init__(self):
+        self._name = "DIS"
+
+    def get_init_parameters(self, name: str) -> DataFrame:
+        parameters = DataFrame(
+            {
+                "initial": [0.0, 1.0],
+                "pmin": [-1.0, 0.0],
+                "pmax": [1.0, 10.0],
+                "vary": [True, False],
+                "name": [name, name],
+                "dist": ["uniform", "uniform"],
+            },
+            index=[name + "_d", name + "_height"],
+        )
+        return parameters
+
+    def update_package(
+        self, modflow_gwf: flopy.mf6.ModflowGwf, d: float, height: float = 1.0
+    ) -> None:
+        """Update the discretization package."""
+        dis = flopy.mf6.ModflowGwfdis(
+            modflow_gwf,
+            length_units="METERS",
+            nlay=1,
+            nrow=1,
+            ncol=1,
+            delr=1,
+            delc=1,
+            top=d + height,
+            botm=d,
+            idomain=1,
+            pname=self._name,
+        )
+        dis.write()
+
+    def stress(self) -> None:
+        return None
+
+
+class ModflowIc:
+    def __init__(self):
+        self._name = "IC"
+
+    def get_init_parameters(self, name: str) -> DataFrame:
+        parameters = DataFrame(
+            {
+                "initial": [1.0],
+                "pmin": [0.0],
+                "pmax": [10.0],
+                "vary": [True],
+                "name": [name],
+                "dist": ["uniform"],
+            },
+            index=[name + "_d"],
+        )
+        return parameters
+
+    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, d: float) -> None:
+        """Update the initial conditions package."""
+        ic = flopy.mf6.ModflowGwfic(modflow_gwf, strt=d, pname=self._name)
+        ic.write()
+
+    def stress(self) -> None:
+        return None
+
+
+class ModflowSto:
+    def __init__(self):
+        self._name = "STO"
+
+    def get_init_parameters(self, name: str) -> DataFrame:
+        parameters = DataFrame(
+            {
+                "initial": [0.05],
+                "pmin": [0.001],
+                "pmax": [0.5],
+                "vary": [True],
+                "name": [name],
+                "dist": ["uniform"],
+            },
+            index=[name + "_s"],
+        )
+        return parameters
+
+    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, s: float) -> None:
+        """Update the storage package."""
+        haq = (modflow_gwf.dis.top.array - modflow_gwf.dis.botm.array)[0]
+        sto = flopy.mf6.ModflowGwfsto(
+            modflow_gwf,
+            save_flows=False,
+            iconvert=1,
+            ss=s / haq,
+            sy=s,
+            transient=True,
+            ss_confined_only=True,
+            pname=self._name,
+        )
+        sto.write()
+
+    def stress(self) -> None:
+        return None
+
+
 class ModflowGhb:
     def __init__(self):
         self._name = "GHB"
@@ -80,11 +185,8 @@ class ModflowRch:
         return parameters
 
     def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, f: float) -> None:
-        rech = (self.prec + f * self.evap)
-        rts = [
-            (i, x) for i, x in zip(range(modflow_gwf.nper + 1), np.append(rech, 0.0))
-        ]
-
+        rech = self.prec + f * self.evap
+        rts = list(zip(range(modflow_gwf.nper + 1), np.append(rech, 0.0)))
         ts_dict = {
             "filename": f"{modflow_gwf.name}.rch_ts",
             "timeseries": rts,
@@ -306,42 +408,42 @@ class ModflowDrn:
         return None
 
 
-class ModflowSto:
-    def __init__(self):
-        self._name = "STO"
+# class ModflowSto:
+#     def __init__(self):
+#         self._name = "STO"
 
-    def get_init_parameters(self, name: str) -> DataFrame:
-        parameters = DataFrame(
-            {
-                "initial": [1.0, 0.3],
-                "pmin": [0.0, 0.001],
-                "pmax": [10.0, 1.0],
-                "vary": [True, True],
-                "name": [name, name],
-                "dist": ["uniform", "uniform"],
-            },
-            index=[name + "_h_drn", name + "_s_drn"],
-        )
-        return parameters
+#     def get_init_parameters(self, name: str) -> DataFrame:
+#         parameters = DataFrame(
+#             {
+#                 "initial": [1.0, 0.3],
+#                 "pmin": [0.0, 0.001],
+#                 "pmax": [10.0, 1.0],
+#                 "vary": [True, True],
+#                 "name": [name, name],
+#                 "dist": ["uniform", "uniform"],
+#             },
+#             index=[name + "_h_drn", name + "_s_drn"],
+#         )
+#         return parameters
 
-    def update_package(
-        self, modflow_gwf: flopy.mf6.ModflowGwf, s_drn: float, s: float
-    ) -> None:
-        haq = (modflow_gwf.dis.top.array - modflow_gwf.dis.botm.array)[0]
-        sto = flopy.mf6.ModflowGwfsto(
-            modflow_gwf,
-            save_flows=False,
-            iconvert=1,
-            ss=s_drn / haq,
-            sy=s,
-            transient=True,
-            ss_confined_only=True,
-            pname=self._name,
-        )
-        sto.write()
+#     def update_package(
+#         self, modflow_gwf: flopy.mf6.ModflowGwf, s_drn: float, s: float
+#     ) -> None:
+#         haq = (modflow_gwf.dis.top.array - modflow_gwf.dis.botm.array)[0]
+#         sto = flopy.mf6.ModflowGwfsto(
+#             modflow_gwf,
+#             save_flows=False,
+#             iconvert=1,
+#             ss=s_drn / haq,
+#             sy=s,
+#             transient=True,
+#             ss_confined_only=True,
+#             pname=self._name,
+#         )
+#         sto.write()
 
-    def stress(self) -> None:
-        return None
+#     def stress(self) -> None:
+#         return None
 
 
 class ModflowDrnSto:
