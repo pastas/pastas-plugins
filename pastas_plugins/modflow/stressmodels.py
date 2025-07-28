@@ -1,4 +1,4 @@
-from functools import lru_cache
+from functools import lru_cache as lru_cache
 from inspect import signature
 from logging import getLogger
 from pathlib import Path
@@ -148,7 +148,7 @@ class ModflowModel(StressModelBase):
     def to_dict(self) -> dict:
         raise NotImplementedError()
 
-    def simulate(self, p: ArrayLike, **kwargs: Any):
+    def simulate(self, p: ArrayLike, **kwargs: dict[str, Any]) -> Series:
         h = self.get_head(p=p)
         return Series(
             data=h,
@@ -159,18 +159,7 @@ class ModflowModel(StressModelBase):
             ),
         )
 
-    def _get_block(self, p, dt, tmin, tmax):
-        """Internal method to get the block-response function.
-        Cannot be used (yet?) since there is no block response
-        """
-        # prec = np.zeros(len())
-        # evap = np.zeros()
-        # return modflow.simulate(np.mean(prec))
-        raise NotImplementedError(
-            "Block response function is not implemented for ModflowModel."
-        )
-
-    @lru_cache(maxsize=None)
+    # @lru_cache(maxsize=None)
     def get_head(self, p: ArrayLike) -> np.ndarray:
         self.update_model(p=p)
         success, _ = self._simulation.run_simulation(silent=self.silent)
