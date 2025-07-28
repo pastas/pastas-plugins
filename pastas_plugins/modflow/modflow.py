@@ -12,11 +12,13 @@ logger = logging.getLogger(__name__)
 class ModflowPackage(Protocol):
     name: str
 
-    def get_init_parameters(self, name: str) -> DataFrame:
-        pass
+    def get_init_parameters(self, name: str) -> DataFrame: ...
 
-    def update_package(self, p: ArrayLike) -> Any:
-        pass
+    def update_package(
+        self, modflow_gwf: flopy.mf6.ModflowGwf, p: ArrayLike
+    ) -> Any: ...
+
+    def stress() -> list[Series] | None: ...
 
 
 class ModflowGhb:
@@ -49,12 +51,15 @@ class ModflowGhb:
         ghb.write()
         return ghb
 
+    def stress(self) -> None:
+        return None
+
 
 class ModflowRch:
     def __init__(
         self,
-        prec: Series | None = None,
-        evap: Series | None = None,
+        prec: Series,
+        evap: Series,
     ):
         self._name = "RCH"
         self.prec = prec
@@ -96,6 +101,9 @@ class ModflowRch:
         )
         rch.write()
         rch.ts.write()
+
+    def stress(self) -> list[Series]:
+        return [self.prec, self.evap]
 
 
 class ModflowUzf:
@@ -260,6 +268,9 @@ class ModflowUzf:
         )
         drn.write()
 
+    def stress(self) -> list[Series]:
+        return [self.prec, self.evap]
+
 
 class ModflowDrn:
     def __init__(self, **kwargs):
@@ -279,7 +290,7 @@ class ModflowDrn:
         )
         return parameters
 
-    def update_drn(self, d: float, C: float):
+    def update_drn(self, d: float, C: float) -> None:
         drn = flopy.mf6.ModflowGwfdrn(
             self._gwf,
             print_input=True,
@@ -292,20 +303,8 @@ class ModflowDrn:
         )
         drn.write()
 
-    def update_model(self, p: ArrayLike):
-        if self.constant_d_from_modflow:
-            d = p[0]
-            p = p[1:]
-            self.update_ic(d=d)
-        else:
-            d = 0.0
-        C, s, f, h_drn, c_drn = p
-        self.update_dis(d=0, height=1.0)
-        self.update_sto(s=s)
-        self.update_ghb(d=d, C=C)
-        self.update_rch(f=f)
-        self.update_drn(d=d + h_drn, c=c_drn)
-        self._gwf.name_file.write()
+    def stress(self) -> None:
+        return None
 
 
 class ModflowSto:
@@ -341,6 +340,9 @@ class ModflowSto:
         )
         sto.write()
 
+    def stress(self) -> None:
+        return None
+
 
 class ModflowDrnSto(ModflowDrn, ModflowSto):
     def __init__(self):
@@ -365,3 +367,6 @@ class ModflowDrnSto(ModflowDrn, ModflowSto):
         self.update_rch(f=f)
         self.update_drn(d=d + h_drn, c=c_drn)
         self._gwf.name_file.write()
+
+    def stress(self) -> None:
+        return None
