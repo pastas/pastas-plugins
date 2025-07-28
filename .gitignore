@@ -143,3 +143,4 @@ cython_debug/
 /docs/examples/mf_files
 /docs/examples/data/*.csv
 *.code-workspace
+docs/examples/mftest/
