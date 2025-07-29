@@ -29,18 +29,18 @@ class ModflowDis:
         parameters = DataFrame(
             {
                 "initial": [0.0, 1.0],
-                "pmin": [-1.0, 0.0],
-                "pmax": [1.0, 10.0],
+                "pmin": [np.nan, 0.0],
+                "pmax": [np.nan, 10.0],
                 "vary": [True, False],
                 "name": [name, name],
                 "dist": ["uniform", "uniform"],
             },
-            index=[name + "_d", name + "_height"],
+            index=[name + "_d", name + "_H"],
         )
         return parameters
 
     def update_package(
-        self, modflow_gwf: flopy.mf6.ModflowGwf, d: float, height: float = 1.0
+        self, modflow_gwf: flopy.mf6.ModflowGwf, d: float, H: float = 1.0
     ) -> None:
         """Update the discretization package."""
         dis = flopy.mf6.ModflowGwfdis(
@@ -51,7 +51,7 @@ class ModflowDis:
             ncol=1,
             delr=1,
             delc=1,
-            top=d + height,
+            top=d + H,
             botm=d,
             idomain=1,
             pname=self._name,
@@ -103,19 +103,19 @@ class ModflowSto:
                 "name": [name],
                 "dist": ["uniform"],
             },
-            index=[name + "_s"],
+            index=[name + "_S"],
         )
         return parameters
 
-    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, s: float) -> None:
+    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, S: float) -> None:
         """Update the storage package."""
         haq = (modflow_gwf.dis.top.array - modflow_gwf.dis.botm.array)[0]
         sto = flopy.mf6.ModflowGwfsto(
             modflow_gwf,
             save_flows=False,
             iconvert=1,
-            ss=s / haq,
-            sy=s,
+            ss=S / haq,
+            sy=S,
             transient=True,
             ss_confined_only=True,
             pname=self._name,
@@ -133,14 +133,14 @@ class ModflowGhb:
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
             {
-                "initial": [1.0, 1e-3],
-                "pmin": [0.0, 1e-5],
-                "pmax": [10.0, 1e-1],
+                "initial": [0.0, 1e-3],
+                "pmin": [np.nan, 1e-5],
+                "pmax": [np.nan, 1e-1],
                 "vary": [True, True],
                 "name": [name, name],
                 "dist": ["uniform", "uniform"],
             },
-            index=[name + "_D", name + "_C"],
+            index=[name + "_d", name + "_C"],
         )
         return parameters
 
@@ -237,7 +237,7 @@ class ModflowUzf:
                 "dist": ["uniform"] * 7,
             },
             index=[
-                name + "_height",
+                name + "_H",
                 name + "_vks",
                 name + "_thtr",
                 name + "_thts",
@@ -251,7 +251,7 @@ class ModflowUzf:
     def update_package(
         self,
         modflow_gwf: flopy.mf6.ModflowGwf,
-        height: float,
+        H: float,
         vks: float,
         thtr: float,
         thts: float,
@@ -259,7 +259,7 @@ class ModflowUzf:
         thextfrac: float,
         extdpfrac: float,
     ) -> None:
-        extdp = extdpfrac * height
+        extdp = extdpfrac * H
         thext = thtr + (thts - thtr) * thextfrac
 
         finf = self.prec
@@ -422,7 +422,7 @@ class ModflowDrn:
 #                 "name": [name, name],
 #                 "dist": ["uniform", "uniform"],
 #             },
-#             index=[name + "_h_drn", name + "_s_drn"],
+#             index=[name + "_h_drn", name + "_S_drn"],
 #         )
 #         return parameters
 
@@ -452,7 +452,7 @@ class ModflowDrnSto:
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = ModflowDrn.get_init_parameters(self, name)
-        parameters.loc[name + "_s_drn"] = (0.3, 0.001, 1.0, True, name, "uniform")
+        parameters.loc[name + "_S_drn"] = (0.3, 0.001, 1.0, True, name, "uniform")
         return parameters
 
     def update_package(
@@ -460,8 +460,8 @@ class ModflowDrnSto:
         modflow_gwf: flopy.mf6.ModflowGwf,
         d: float,
         C: float,
-        s_drn: float,
-        s: float,
+        S_drn: float,
+        S: float,
     ) -> None:
         drn = flopy.mf6.ModflowGwfdrn(
             modflow_gwf,
@@ -480,8 +480,8 @@ class ModflowDrnSto:
             modflow_gwf,
             save_flows=False,
             iconvert=1,
-            ss=s_drn / haq,
-            sy=s,
+            ss=S_drn / haq,
+            sy=S,
             transient=True,
             ss_confined_only=True,
             pname="STO",
