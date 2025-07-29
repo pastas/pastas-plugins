@@ -1,5 +1,5 @@
 import logging
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 import flopy
 import numpy as np
@@ -10,12 +10,12 @@ logger = logging.getLogger(__name__)
 
 @runtime_checkable
 class ModflowPackage(Protocol):
-    name: str
+    _name: str
 
     def get_init_parameters(self, name: str) -> DataFrame: ...
 
     def update_package(
-        self, modflow_gwf: flopy.mf6.ModflowGwf, *args: float
+        self, modflow_gwf: flopy.mf6.ModflowGwf, **kwargs: Any
     ) -> None: ...
 
     def stress() -> dict[str, Series] | None: ...
@@ -96,7 +96,7 @@ class ModflowSto:
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
             {
-                "initial": [0.05],
+                "initial": [0.1],
                 "pmin": [0.001],
                 "pmax": [0.5],
                 "vary": [True],
@@ -109,7 +109,7 @@ class ModflowSto:
 
     def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, S: float) -> None:
         """Update the storage package."""
-        haq = (modflow_gwf.dis.top.array - modflow_gwf.dis.botm.array)[0]
+        haq = modflow_gwf.dis.top.array[0, 0] - modflow_gwf.dis.botm.array[0, 0, 0]
         sto = flopy.mf6.ModflowGwfsto(
             modflow_gwf,
             save_flows=False,
@@ -389,15 +389,15 @@ class ModflowDrn:
                 "name": [name, name],
                 "dist": ["uniform", "uniform"],
             },
-            index=[name + "_drnH", name + "_drnC"],
+            index=[name + "_drnHfrac", name + "_drnC"],
         )
         return parameters
 
-    def update_drn(
+    def update_package(
         self, modflow_gwf: flopy.mf6.ModflowGwf, drnHfrac: float, drnC: float
     ) -> None:
-        top = modflow_gwf.dis.top.array[0]
-        botm = modflow_gwf.dis.botm.array[0]
+        top = modflow_gwf.dis.top.array[0, 0]
+        botm = modflow_gwf.dis.botm.array[0, 0, 0]
         drnH = botm + drnHfrac * (top - botm)
         drn = flopy.mf6.ModflowGwfdrn(
             modflow_gwf,
@@ -434,11 +434,11 @@ class ModflowSto2:
         return parameters
 
     def update_package(
-        self, modflow_gwf: flopy.mf6.ModflowGwf, drnS: float, S: float
+        self, modflow_gwf: flopy.mf6.ModflowGwf, drnSfrac: float, drnS: float, S: float
     ) -> None:
-        top = modflow_gwf.dis.top.array[0]
-        botm = modflow_gwf.dis.botm.array[0]
-        drnH = botm + drnS * (top - botm)  # TODO: add to dis
+        top = modflow_gwf.dis.top.array[0, 0]
+        botm = modflow_gwf.dis.botm.array[0, 0, 0]
+        drnH = botm + drnSfrac * (top - botm)
         haq = top - botm
 
         sto = flopy.mf6.ModflowGwfsto(
@@ -453,6 +453,9 @@ class ModflowSto2:
         )
         sto.write()
 
+        # TODO: This is probably not correct, double check with old method
+        ModflowDis().update_package(modflow_gwf, d=botm, H=top + drnH)
+
     def stress(self) -> None:
         return None
 
@@ -464,7 +467,7 @@ class ModflowDrnSto:
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
             {
-                "initial": [0.0, 1e-3, 0.3, 1.0],
+                "initial": [0.0, 1e-3, 0.3, 0.1],
                 "pmin": [0.0, 1e-5, 0.01, 0.001],
                 "pmax": [1.0, 1e-1, 0.5, 0.5],
                 "vary": [True, True, True, True],
@@ -483,23 +486,12 @@ class ModflowDrnSto:
         drnS: float,
         S: float,
     ) -> None:
-        top = modflow_gwf.dis.top.array[0]
-        botm = modflow_gwf.dis.botm.array[0]
-        drnH = botm + drnHfrac * (top - botm)
-        drn = flopy.mf6.ModflowGwfdrn(
-            modflow_gwf,
-            print_input=True,
-            print_flows=True,
-            save_flows=False,
-            boundnames=True,
-            maxbound=1,
-            stress_period_data={0: [[(0, 0, 0), drnH, drnC]]},
-            pname="DRN",
-        )
-        drn.write()
+        ModflowDrn().update_package(modflow_gwf, drnHfrac=drnHfrac, drnC=drnC)
 
         if "STO" in modflow_gwf.get_package_list():
             modflow_gwf.remove_package("STO")
+        top = modflow_gwf.dis.top.array[0, 0]
+        botm = modflow_gwf.dis.botm.array[0, 0, 0]
         haq = top - botm
         sto = flopy.mf6.ModflowGwfsto(
             modflow_gwf,
