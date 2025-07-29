@@ -112,18 +112,6 @@ class ModflowModel(StressModelBase):
 
         self.set_init_parameters()
 
-    def get_stress(
-        self,
-        package_name: str,
-        stress_name: str,
-        tmin: Timestamp | None = None,
-        tmax: Timestamp | None = None,
-        freq: str | None = None,
-    ) -> Series:
-        """Get the stress time series for a specific package."""
-
-        return self.stress[package_name][stress_name].series
-
     @property
     def package_parameter_names(self) -> dict[str, list[str]]:
         """Get the parameter names of the packages."""
@@ -156,6 +144,7 @@ class ModflowModel(StressModelBase):
         raise NotImplementedError()
 
     def simulate(self, p: ArrayLike, *args: Any) -> Series:
+        """Run the MODFLOW simulation and return the head time series."""
         h = self.get_head(p=p)
         return Series(
             data=h,
@@ -168,8 +157,10 @@ class ModflowModel(StressModelBase):
 
     # @lru_cache(maxsize=None)
     def get_head(self, p: ArrayLike) -> np.ndarray:
+        """Run the MODFLOW simulation and return the head values."""
         self.update_model(p=p)
         success, _ = self._simulation.run_simulation(silent=self.silent)
+
         if success:
             return self._gwf.output.head().get_ts((0, 0, 0))[:, 1]
         else:
@@ -194,6 +185,7 @@ class ModflowModel(StressModelBase):
     def setup_modflow_simulation(
         self,
     ) -> tuple[flopy.mf6.MFSimulation, flopy.mf6.ModflowGwf]:
+        """Set up the MODFLOW simulation."""
         sim = flopy.mf6.MFSimulation(
             sim_name=self.name,
             version="mf6",
@@ -232,6 +224,7 @@ class ModflowModel(StressModelBase):
         return sim, gwf
 
     def _remove_changing_package(self, package_name: str):
+        """Remove a package from the model if it exists."""
         if package_name in self._gwf.get_package_list():
             self._gwf.remove_package(package_name)
 
