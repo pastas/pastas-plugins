@@ -6,7 +6,7 @@ from typing import Any
 
 import flopy
 import numpy as np
-from pandas import DataFrame, Series, Timestamp, concat, date_range
+from pandas import Series, Timestamp, concat, date_range
 from pastas.model import Model
 from pastas.stressmodels import StressModelBase
 from pastas.timeseries import TimeSeries
@@ -50,7 +50,6 @@ class ModflowModel(StressModelBase):
             rfunc=None,
         )
         self.ml = ml
-        self.constant_d_from_modflow = True
         if "constant_d" in ml.parameters.index:
             ml.del_constant()
             logger.info(
@@ -58,7 +57,6 @@ class ModflowModel(StressModelBase):
                 "(`ml.del_constant('constant_d')`). Base elevation is now controlled by "
                 "parameter `_d`."
             )
-            self.constant_d_from_modflow = True
         self.exe_name = exe_name
         self.sim_ws = sim_ws
         self.raise_on_modflow_error = raise_on_modflow_error
@@ -141,14 +139,23 @@ class ModflowModel(StressModelBase):
 
     def set_init_parameters(self) -> None:
         """Set the initial parameters back to their default values."""
-        self.parameters = concat(
+        pdf = concat(
             [p.get_init_parameters(self.name) for p in self._packages.values()], axis=0
         )
+        if f"{self.name}_d" in pdf.index:
+            pdf.loc[f"{self.name}_d", ["initial", "pmin", "pmax"]] = (
+                self.ml.oseries.series.mean(),
+                self.ml.oseries.series.min() - self.ml.oseries.series.std(),
+                self.ml.oseries.series.max() + self.ml.oseries.series.std(),
+            )
+        if pdf.index.duplicated(keep="first").any():
+            pdf = pdf[~pdf.index.duplicated(keep="first")]
+        self.parameters = pdf
 
     def to_dict(self) -> dict:
         raise NotImplementedError()
 
-    def simulate(self, p: ArrayLike, **kwargs: dict[str, Any]) -> Series:
+    def simulate(self, p: ArrayLike, *args: Any) -> Series:
         h = self.get_head(p=p)
         return Series(
             data=h,
@@ -227,21 +234,6 @@ class ModflowModel(StressModelBase):
     def _remove_changing_package(self, package_name: str):
         if package_name in self._gwf.get_package_list():
             self._gwf.remove_package(package_name)
-
-    def get_init_parameters(self, name: str) -> DataFrame:
-        parameters = DataFrame(
-            columns=["initial", "pmin", "pmax", "vary", "name", "dist"]
-        )
-        parameters.loc[name + "_d"] = (
-            float(np.mean(self._head)),
-            min(self._head),
-            max(self._head),
-            True,
-            name,
-            "uniform",
-        )
-        parameters.loc[name + "_s"] = (0.05, 0.001, 0.5, True, name, "uniform")
-        return parameters
 
 
 solver_kwargs_uzf = dict(
