@@ -282,14 +282,14 @@ class ModflowUzf:
         rootact = 0.0  # the length of roots in a given volume of soil divided by that volume [L^-2]
 
         nlay = 1  # only one uzf cell / layer
-
+        surfdep = 1e-5  # surface depression depth
         uzf_pkdat = [
             [
                 n,  # iuzno
                 (0, 0, 0),  # gwf_cellid
                 1 if n == 0 else 0,  # landflag
                 n + 1 if (n + 1) != nlay else -1,  # ivertcon
-                1e-5,  # surface depression depth
+                surfdep,  # surface depression depth
                 vks,  # vertical saturated hydraulic conductivity
                 thtr,  # residual water content
                 thts,  # saturated water content
@@ -357,9 +357,11 @@ class ModflowUzf:
         uzf.write()
         uzf.ts.write()
 
-        self._remove_changing_package("DRN")
+        # simulate surface runoff, originally done by simulate_gwseep in uzf
+        if "DRN" in modflow_gwf._gwf.get_package_list():
+            modflow_gwf._gwf.remove_package("DRN")
         top = modflow_gwf.dis.top.array[0][0]
-        elev = top - 1e-5  # top - surfdep
+        elev = top - surfdep  # top - surfdep
         drn = flopy.mf6.ModflowGwfdrn(
             modflow_gwf,
             save_flows=False,
@@ -380,18 +382,23 @@ class ModflowDrn:
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
             {
-                "initial": [1.0, 1e-3],
+                "initial": [0.5, 1e-3],
                 "pmin": [0.0, 1e-5],
-                "pmax": [10.0, 1e-1],
+                "pmax": [1.0, 1e-1],
                 "vary": [True, True],
                 "name": [name, name],
                 "dist": ["uniform", "uniform"],
             },
-            index=[name + "_h_drn", name + "_C_drn"],
+            index=[name + "_drnH", name + "_drnC"],
         )
         return parameters
 
-    def update_drn(self, d: float, C: float) -> None:
+    def update_drn(
+        self, modflow_gwf: flopy.mf6.ModflowGwf, drnHfrac: float, drnC: float
+    ) -> None:
+        top = modflow_gwf.dis.top.array[0]
+        botm = modflow_gwf.dis.botm.array[0]
+        drnH = botm + drnHfrac * (top - botm)
         drn = flopy.mf6.ModflowGwfdrn(
             self._gwf,
             print_input=True,
@@ -399,7 +406,7 @@ class ModflowDrn:
             save_flows=False,
             boundnames=True,
             maxbound=1,
-            stress_period_data={0: [[(0, 0, 0), d, C]]},
+            stress_period_data={0: [[(0, 0, 0), drnH, drnC]]},
             pname=self._name,
         )
         drn.write()
@@ -408,61 +415,77 @@ class ModflowDrn:
         return None
 
 
-# class ModflowSto:
-#     def __init__(self):
-#         self._name = "STO"
+class ModflowSto2:
+    def __init__(self):
+        self._name = "STO"
 
-#     def get_init_parameters(self, name: str) -> DataFrame:
-#         parameters = DataFrame(
-#             {
-#                 "initial": [1.0, 0.3],
-#                 "pmin": [0.0, 0.001],
-#                 "pmax": [10.0, 1.0],
-#                 "vary": [True, True],
-#                 "name": [name, name],
-#                 "dist": ["uniform", "uniform"],
-#             },
-#             index=[name + "_h_drn", name + "_S_drn"],
-#         )
-#         return parameters
+    def get_init_parameters(self, name: str) -> DataFrame:
+        parameters = DataFrame(
+            {
+                "initial": [0.5, 0.3, 0.1],
+                "pmin": [0.0, 0.01, 0.001],
+                "pmax": [1.0, 1.0, 0.5],
+                "vary": [True, True, True],
+                "name": [name, name, True],
+                "dist": ["uniform", "uniform", "uniform"],
+            },
+            index=[name + "_drnSfrac", name + "_drnS", name + "_S"],
+        )
+        return parameters
 
-#     def update_package(
-#         self, modflow_gwf: flopy.mf6.ModflowGwf, s_drn: float, s: float
-#     ) -> None:
-#         haq = (modflow_gwf.dis.top.array - modflow_gwf.dis.botm.array)[0]
-#         sto = flopy.mf6.ModflowGwfsto(
-#             modflow_gwf,
-#             save_flows=False,
-#             iconvert=1,
-#             ss=s_drn / haq,
-#             sy=s,
-#             transient=True,
-#             ss_confined_only=True,
-#             pname=self._name,
-#         )
-#         sto.write()
+    def update_package(
+        self, modflow_gwf: flopy.mf6.ModflowGwf, drnS: float, S: float
+    ) -> None:
+        top = modflow_gwf.dis.top.array[0]
+        botm = modflow_gwf.dis.botm.array[0]
+        drnH = botm + drnS * (top - botm)  # TODO: add to dis
+        haq = top - botm
 
-#     def stress(self) -> None:
-#         return None
+        sto = flopy.mf6.ModflowGwfsto(
+            modflow_gwf,
+            save_flows=False,
+            iconvert=1,
+            ss=drnS / haq,
+            sy=S,
+            transient=True,
+            ss_confined_only=True,
+            pname=self._name,
+        )
+        sto.write()
+
+    def stress(self) -> None:
+        return None
 
 
 class ModflowDrnSto:
     def __init__(self):
-        self._name = "DRN_STO"
+        self._name = "DRN"
 
     def get_init_parameters(self, name: str) -> DataFrame:
-        parameters = ModflowDrn.get_init_parameters(self, name)
-        parameters.loc[name + "_S_drn"] = (0.3, 0.001, 1.0, True, name, "uniform")
+        parameters = DataFrame(
+            {
+                "initial": [0.0, 1e-3, 0.3, 1.0],
+                "pmin": [0.0, 1e-5, 0.01, 0.001],
+                "pmax": [1.0, 1e-1, 0.5, 0.5],
+                "vary": [True, True, True, True],
+                "name": [name, name, name, name],
+                "dist": ["uniform", "uniform", "uniform", "uniform"],
+            },
+            index=[name + "_drnHfrac", name + "_drnC", name + "_drnS", name + "_S"],
+        )
         return parameters
 
     def update_package(
         self,
         modflow_gwf: flopy.mf6.ModflowGwf,
-        d: float,
-        C: float,
-        S_drn: float,
+        drnHfrac: float,
+        drnC: float,
+        drnS: float,
         S: float,
     ) -> None:
+        top = modflow_gwf.dis.top.array[0]
+        botm = modflow_gwf.dis.botm.array[0]
+        drnH = botm + drnHfrac * (top - botm)
         drn = flopy.mf6.ModflowGwfdrn(
             modflow_gwf,
             print_input=True,
@@ -470,17 +493,19 @@ class ModflowDrnSto:
             save_flows=False,
             boundnames=True,
             maxbound=1,
-            stress_period_data={0: [[(0, 0, 0), d, C]]},
+            stress_period_data={0: [[(0, 0, 0), drnH, drnC]]},
             pname="DRN",
         )
         drn.write()
 
-        haq = (modflow_gwf.dis.top.array - modflow_gwf.dis.botm.array)[0]
+        if "STO" in modflow_gwf._gwf.get_package_list():
+            modflow_gwf._gwf.remove_package("STO")
+        haq = top - botm
         sto = flopy.mf6.ModflowGwfsto(
             modflow_gwf,
             save_flows=False,
             iconvert=1,
-            ss=S_drn / haq,
+            ss=drnS / haq,
             sy=S,
             transient=True,
             ss_confined_only=True,
