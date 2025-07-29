@@ -358,8 +358,8 @@ class ModflowUzf:
         uzf.ts.write()
 
         # simulate surface runoff, originally done by simulate_gwseep in uzf
-        if "DRN" in modflow_gwf._gwf.get_package_list():
-            modflow_gwf._gwf.remove_package("DRN")
+        if "DRN" in modflow_gwf.get_package_list():
+            modflow_gwf.remove_package("DRN")
         top = modflow_gwf.dis.top.array[0][0]
         elev = top - surfdep  # top - surfdep
         drn = flopy.mf6.ModflowGwfdrn(
@@ -400,7 +400,7 @@ class ModflowDrn:
         botm = modflow_gwf.dis.botm.array[0]
         drnH = botm + drnHfrac * (top - botm)
         drn = flopy.mf6.ModflowGwfdrn(
-            self._gwf,
+            modflow_gwf,
             print_input=True,
             print_flows=True,
             save_flows=False,
@@ -498,8 +498,8 @@ class ModflowDrnSto:
         )
         drn.write()
 
-        if "STO" in modflow_gwf._gwf.get_package_list():
-            modflow_gwf._gwf.remove_package("STO")
+        if "STO" in modflow_gwf.get_package_list():
+            modflow_gwf.remove_package("STO")
         haq = top - botm
         sto = flopy.mf6.ModflowGwfsto(
             modflow_gwf,
