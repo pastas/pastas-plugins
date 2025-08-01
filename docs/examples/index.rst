@@ -31,6 +31,14 @@ Below you can find examples for the different plugins.
 
 .. _Using a Modflow model as a stressmodel in Pastas: modflow.html
 
+`Modflow Time Series Model with the UZF package`_
+
+.. _Modflow Time Series Model with the UZF package: modflow_uzf.html
+
+`Modflow Time Series Model with the DRN package`_
+
+.. _Modflow Time Series Model with the DRN package: modflow_drn.html
+
 
 .. rubric:: Cross-correlation
 

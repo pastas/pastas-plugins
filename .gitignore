@@ -174,3 +174,8 @@ cython_debug/
 /docs/examples/pestf_sen
 /docs/examples/template
 /docs/examples/model
+/docs/examples/mf_files
+docs/examples/bin/mf6
+docs/examples/data/evap.csv
+docs/examples/data/obs.csv
+docs/examples/data/rain.csv
