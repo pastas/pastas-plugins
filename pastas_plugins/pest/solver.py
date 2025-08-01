@@ -7,12 +7,14 @@ from platform import node as get_computername
 from shutil import copy as copy_file
 from threading import Thread
 from time import sleep
-from typing import Dict, Literal, Optional, Tuple, Union
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
 import pyemu
+from numpy.typing import NDArray
 from pandas import DataFrame
+from pastas import Model
 from pastas.solver import BaseSolver
 from pastas.typing import TimestampType
 from psutil import cpu_count
@@ -21,7 +23,7 @@ from scipy.stats import norm, truncnorm
 logger = logging.getLogger(__name__)
 
 
-def run():
+def run() -> None:
     # load packages
     from pathlib import Path
 
@@ -45,41 +47,77 @@ def run():
     simulation.loc[ml.observations().index].to_csv(fpath / "simulation.csv")
 
 
+def run_pypestworker(
+    pst: str | pyemu.Pst,
+    host: int,
+    port: int,
+    ml: Model,
+) -> None:
+    ppw = pyemu.os_utils.PyPestWorker(
+        pst=pst,
+        host=host,
+        port=port,
+        verbose=False,
+    )
+    pvals = ppw.get_parameters()
+    if pvals is None:
+        return None
+
+    while True:
+        for pname, val in pvals.items():
+            pname = pname.split(":")[-1] if ":" in pname else pname
+            pname = pname.replace("_g", "_A") if pname.endswith("_g") else pname
+            ml.set_parameter(pname, optimal=val)
+        sim = ml.simulate()
+        obsvals = sim.loc[ml.observations().index]
+        obsvals.index = ppw._pst.observation_data.index
+        ppw.send_observations(obsvals=obsvals)
+        pvals = ppw.get_parameters()
+        if pvals is None:
+            break
+
+
 class PestSolver(BaseSolver):
     """PEST solver base class"""
 
     def __init__(
         self,
-        exe_name: Union[str, Path],
-        model_ws: Union[str, Path] = Path("model"),
-        temp_ws: Union[str, Path] = Path("temp"),
+        exe_name: str | Path,
+        model_ws: str | Path = Path("model"),
+        temp_ws: str | Path = Path("temp"),
         noptmax: int = 0,
-        control_data: Optional[dict] = None,
-        pcov: Optional[DataFrame] = None,
-        nfev: Optional[int] = None,
+        control_data: dict[str, Any] | None = None,
+        pcov: DataFrame | None = None,
+        nfev: int | None = None,
         long_names: bool = True,
+        port_number: int = 4004,
+        use_pypestworker: bool = True,
         **kwargs,
     ) -> None:
         """Initialize the PEST solver.
 
         Parameters
         ----------
-        exe_name : Union[str, Path]
+        exe_name : str | Path
             The name or path to the PEST executable.
-        model_ws : Union[str, Path], optional
+        model_ws : str | Path, optional
             The model workspace directory for Pastas files. Default is "model".
-        temp_ws : Union[str, Path], optional
+        temp_ws : str | Path, optional
             The template workspace directory for PEST files. Default is "temp".
         noptmax : int, optional
             The maximum number of optimization iterations. Default is 0.
-        control_data : Optional[dict], optional
+        control_data : dict[str, Any] | None, optional
             Control data for the PEST solver. Default is None.
-        pcov : Optional[DataFrame], optional
+        pcov : DataFrame | None, optional
             The parameter covariance matrix. Default is None.
-        nfev : Optional[int], optional
+        nfev : int | None, optional
             The number of function evaluations. Default is None.
         long_names : bool, optional
             Whether to use long names in the PEST control file. Default is True.
+        port_number : int, optional
+            The port number for communication. Default is 4004.
+        use_pypestworker : bool, optional
+            Whether to use the PyPestWorker for Python processing. Default is True.
         **kwargs : dict
             Additional keyword arguments passed to the BaseSolver.
 
@@ -103,8 +141,11 @@ class PestSolver(BaseSolver):
         )
         copy_file(self.exe_name, self.temp_ws)  # copy pest executable
         self.noptmax: int = noptmax
-        self.control_data: dict = control_data
+        self.control_data: dict[str, Any] = control_data
+        self.port_number = port_number
+        self.use_pypestworker: bool = use_pypestworker
         self.run_function: Callable = run
+        self.ppw_function: Callable = run_pypestworker
 
     def setup_model(self):
         """Setup and export Pastas model for PEST optimization"""
@@ -237,13 +278,15 @@ class PestGlmSolver(PestSolver):
 
     def __init__(
         self,
-        exe_name: Union[str, Path] = "pestpp-glm",
-        model_ws: Union[str, Path] = Path("model"),
-        temp_ws: Union[str, Path] = Path("temp"),
+        exe_name: str | Path = "pestpp-glm",
+        model_ws: str | Path = Path("model"),
+        temp_ws: str | Path = Path("temp"),
         noptmax: int = 0,
-        control_data: Optional[dict] = None,
-        pcov: Optional[DataFrame] = None,
-        nfev: Optional[int] = None,
+        control_data: dict[str, Any] | None = None,
+        pcov: DataFrame | None = None,
+        nfev: int | None = None,
+        port_number: int = 4004,
+        use_pypestworker: bool = True,
         **kwargs,
     ) -> None:
         """
@@ -251,20 +294,24 @@ class PestGlmSolver(PestSolver):
 
         Parameters
         ----------
-        exe_name : Union[str, Path], optional
+        exe_name : str | Path, optional
             The name or path to the PESTPP-GLM executable. Default is "pestpp-glm".
-        model_ws : Union[str, Path], optional
+        model_ws : str | Path, optional
             The model workspace directory for Pastas files. Default is "model".
-        temp_ws : Union[str, Path], optional
+        temp_ws : str | Path, optional
             The template workspace directory for PEST files. Default is "temp".
         noptmax : int, optional
             The maximum number of optimization iterations. Default is 0.
-        control_data : Optional[dict], optional
+        control_data : dict[str, Any] | None, optional
             Control data for the PEST solver. Default is None.
-        pcov : Optional[DataFrame], optional
+        pcov : DataFrame | None, optional
             The parameter covariance matrix. Default is None.
-        nfev : Optional[int], optional
+        nfev : int | None, optional
             The number of function evaluations. Default is None.
+        port_number : int, optional
+            The port number for communication. Default is 4004.
+        use_pypestworker : bool, optional
+            Whether to use the PyPestWorker for Python processing. Default is True.
         **kwargs : dict
             Additional keyword arguments passed to the PestSolver.
 
@@ -281,11 +328,13 @@ class PestGlmSolver(PestSolver):
             control_data=control_data,
             pcov=pcov,
             nfev=nfev,
+            port_number=port_number,
+            use_pypestworker=use_pypestworker,
             long_names=True,
             **kwargs,
         )
 
-    def solve(self, **kwargs) -> Tuple[bool, np.ndarray, np.ndarray]:
+    def solve(self, **kwargs) -> tuple[bool, NDArray[np.float64], NDArray[np.float64]]:
         """
         Solves the optimization problem using the pestpp-glm solver.
         This method sets up the model and necessary files, runs the solver, and
@@ -301,15 +350,29 @@ class PestGlmSolver(PestSolver):
         -------
         success : bool
             Indicates whether the solver ran successfully.
-        optimal : np.ndarray
+        optimal : NDArray[np.float64]
             The optimal parameters obtained from the solver.
-        stderr : np.ndarray
+        stderr : NDArray[np.float64]
             The standard errors of the optimal parameters.
         """
 
         self.setup_model()
         self.setup_files()
-        self.run()
+        if self.use_pypestworker:
+            pyemu.os_utils.start_workers(
+                worker_dir=self.temp_ws,  # the folder which contains the "template" PEST dataset
+                exe_rel_path=self.exe_name.name,  # the PEST software version we want to run
+                pst_rel_path="pest.pst",  # the control file to use with PEST
+                num_workers=1,  # how many agents to deploy
+                port=self.port_number,  # the port to use for communication
+                worker_root=self.temp_ws.parent,  # where to deploy the agent directories; relative to where python is running
+                master_dir=self.temp_ws,  # the manager directory
+                reuse_master=self.use_pypestworker,
+                ppw_function=self.ppw_function,
+                ppw_kwargs={"ml": self.ml},
+            )
+        else:
+            self.run()
 
         # optimal parameters
         ipar = pd.read_csv(self.temp_ws / "pest.ipar", index_col=0).transpose()
@@ -344,14 +407,14 @@ class PestHpSolver(PestSolver):
 
     def __init__(
         self,
-        exe_name: Union[str, Path] = "pest_hp",
-        exe_agent: Union[str, Path] = "agent_hp",
-        model_ws: Union[str, Path] = Path("model"),
-        temp_ws: Union[str, Path] = Path("temp"),
+        exe_name: str | Path = "pest_hp",
+        exe_agent: str | Path = "agent_hp",
+        model_ws: str | Path = Path("model"),
+        temp_ws: str | Path = Path("temp"),
         noptmax: int = 0,
-        control_data: Optional[dict] = None,
-        pcov: Optional[DataFrame] = None,
-        nfev: Optional[int] = None,
+        control_data: dict[str, Any] | None = None,
+        pcov: DataFrame | None = None,
+        nfev: int | None = None,
         port_number: int = 4004,
         **kwargs,
     ) -> None:
@@ -360,21 +423,21 @@ class PestHpSolver(PestSolver):
 
         Parameters
         ----------
-        exe_name : Union[str, Path], optional
+        exe_name : str | Path, optional
             The name or path to the PEST_HP executable. Default is "pest_hp".
-        exe_agent : Union[str, Path], optional
+        exe_agent : str | Path, optional
             The name or path to the agent_HP executable. Default is "agent_hp".
-        model_ws : Union[str, Path], optional
+        model_ws : str | Path, optional
             The model workspace directory for Pastas files. Default is "model".
-        temp_ws : Union[str, Path], optional
+        temp_ws : str | Path, optional
             The template workspace directory for PEST files. Default is "temp".
         noptmax : int, optional
             The maximum number of optimization iterations. Default is 0.
-        control_data : Optional[dict], optional
+        control_data : dict[str, Any] | None, optional
             Control data for the PEST solver. Default is None.
-        pcov : Optional[DataFrame], optional
+        pcov : DataFrame | None, optional
             The parameter covariance matrix. Default is None.
-        nfev : Optional[int], optional
+        nfev : int | None, optional
             The number of function evaluations. Default is None.
         port_number : int, optional
             The port number for communication. Default is 4004.
@@ -395,16 +458,17 @@ class PestHpSolver(PestSolver):
             long_names=False,
             noptmax=noptmax,
             control_data=control_data,
+            port_number=port_number,
+            use_pypestworker=False,
             **kwargs,
         )
         self.exe_agent = Path(exe_agent)
-        self.port_number = port_number
         self.computername = get_computername()
         copy_file(self.exe_agent, self.temp_ws)  # copy agent executable
 
     def solve(
         self, silent: bool = False, **kwargs
-    ) -> Tuple[bool, np.ndarray, np.ndarray]:
+    ) -> tuple[bool, NDArray[np.float64], NDArray[np.float64]]:
         """
         Solve the optimization problem using the pest_hp solver.
 
@@ -420,9 +484,9 @@ class PestHpSolver(PestSolver):
         -------
         success : bool
             Indicates whether the solver ran successfully.
-        optimal : np.ndarray
+        optimal : NDArray[np.float64]
             The optimal parameters obtained from the solver.
-        stderr : np.ndarray
+        stderr : NDArray[np.float64]
             The standard errors of the optimal parameters.
         """
         self.setup_model()
@@ -453,7 +517,7 @@ class PestHpSolver(PestSolver):
         stderr = np.full_like(optimal, np.nan)
         return True, optimal, stderr
 
-    def run_agent(self, silent: bool = False):
+    def run_agent(self, silent: bool = False) -> None:
         """
         Executes the agent using the specified executable and configuration.
         This method runs the agent with the given executable name, pest control file,
@@ -473,17 +537,18 @@ class PestIesSolver(PestSolver):
 
     def __init__(
         self,
-        exe_name: Union[str, Path] = "pestpp-ies",
-        model_ws: Union[str, Path] = Path("model"),
-        temp_ws: Union[str, Path] = Path("temp"),
-        master_ws: Union[str, Path] = Path("master"),
+        exe_name: str | Path = "pestpp-ies",
+        model_ws: str | Path = Path("model"),
+        temp_ws: str | Path = Path("temp"),
+        master_ws: str | Path = Path("master"),
         noptmax: int = 0,
         ies_num_reals: int = 50,
-        control_data: Optional[dict] = None,
-        pcov: Optional[DataFrame] = None,
-        nfev: Optional[int] = None,
+        control_data: dict[str, Any] | None = None,
+        pcov: DataFrame | None = None,
+        nfev: int | None = None,
         port_number: int = 4004,
-        num_workers: Optional[int] = None,
+        num_workers: int | None = None,
+        use_pypestworker: bool = True,
         **kwargs,
     ) -> None:
         """
@@ -491,28 +556,31 @@ class PestIesSolver(PestSolver):
 
         Parameters
         ----------
-        exe_name : Union[str, Path], optional
+        exe_name : str | Path, optional
             The name of the executable to run, by default "pestpp-ies".
-        model_ws : Union[str, Path], optional
+        model_ws : str | Path, optional
             The working directory for the model, by default Path("model").
-        temp_ws : Union[str, Path], optional
+        temp_ws : str | Path, optional
             The temporary working directory, by default Path("temp").
-        master_ws : Union[str, Path], optional
-            The master working directory, by default Path("master").
+        master_ws : str | Path, optional
+            The master working directory, by default Path("master") unless
+            use_pypestworker is True, then master_ws is equal to temp_ws.
         noptmax : int, optional
             The maximum number of optimization iterations, by default 0.
         ies_num_reals : int, optional
             The number of realizations to draw in order to form parameter and observation ensembles, by default 50.
-        control_data : Optional[dict], optional
+        control_data : dict[str, Any] | None, optional
             Additional control data for the solver, by default None.
-        pcov : Optional[DataFrame], optional
+        pcov : DataFrame | None, optional
             The parameter covariance matrix, by default None.
-        nfev : Optional[int], optional
+        nfev : int | None, optional
             The number of function evaluations, by default None.
         port_number : int, optional
             The port number for communication, by default 4004.
-        num_workers : Optional[int], optional
+        num_workers : int | None, optional
             The number of worker processes, by default the number of physical CPU cores.
+        use_pypestworker : bool, optional
+            Whether to use the PyPestWorker for Python processing. Default is True.
         **kwargs
             Additional keyword arguments passed to the base class initializer.
 
@@ -528,13 +596,15 @@ class PestIesSolver(PestSolver):
             temp_ws=temp_ws,
             pcov=pcov,
             nfev=nfev,
+            port_number=port_number,
+            use_pypestworker=use_pypestworker,
             **kwargs,
         )
-        self.master_ws = master_ws
+
+        self.master_ws = temp_ws if self.use_pypestworker else master_ws
         self.noptmax = noptmax
         self.ies_num_reals = ies_num_reals
         self.control_data = control_data
-        self.port_number = port_number
         self.num_workers = (
             cpu_count(logical=False) if num_workers is None else num_workers
         )
@@ -543,12 +613,11 @@ class PestIesSolver(PestSolver):
         self,
         ies_add_base: bool = True,
         par_sigma_range: float = 4.0,
-        observation_noise_standard_deviation=0.0,
-        observation_noise_correlation_coefficient=0.0,
-        ies_parameter_ensemble_method: Optional[
-            Literal["norm", "truncnorm", "uniform"]
-        ] = None,
-        pestpp_options: Optional[Dict] = None,
+        observation_noise_standard_deviation: float = 0.0,
+        observation_noise_correlation_coefficient: float = 0.0,
+        ies_parameter_ensemble_method: Literal["norm", "truncnorm", "uniform"]
+        | None = None,
+        pestpp_options: dict[str, Any] | None = None,
         silent: bool = False,
     ) -> None:
         """
@@ -567,10 +636,10 @@ class PestIesSolver(PestSolver):
             The standard deviation of the observation noise, by default 0.0.
         observation_noise_correlation_coefficient : float, optional
             The correlation coefficient of the observation noise, by default 0.0.
-        ies_parameter_ensemble_method : Optional[Literal["norm", "truncnorm", "uniform"]], optional
+        ies_parameter_ensemble_method : Literal["norm", "truncnorm", "uniform"] | None, optional
             The method to distribution of the prior for the parameter ensemble, by default None.
             If None the parameter distribution is drawn by pestpp-ies itself.
-        pestpp_options : Optional[Dict], optional
+        pestpp_options : dict | None, optional
             Additional PEST++ options, by default None.
         Returns
         -------
@@ -615,10 +684,17 @@ class PestIesSolver(PestSolver):
             pst_rel_path="pest.pst",  # the control file to use with PEST
             num_workers=self.num_workers,  # how many agents to deploy
             worker_root=self.master_ws.parent,  # where to deploy the agent directories; relative to where python is running
-            port=self.port_number,  # the port to use for communication
             master_dir=self.master_ws,  # the manager directory
+            port=self.port_number,  # the port to use for communication
             verbose=silent,
             silent_master=silent,
+            reuse_master=self.use_pypestworker,
+            ppw_function=self.ppw_function
+            if self.use_pypestworker
+            else None,  # the function to run in the agent
+            ppw_kwargs={"ml": self.ml}
+            if self.use_pypestworker
+            else {},  # the arguments to pass to the ppw_function
         )
 
         phidf = pd.read_csv(self.master_ws / "pest.phi.meas.csv", index_col=0)
@@ -636,7 +712,7 @@ class PestIesSolver(PestSolver):
         pmax: float,
         par_sigma_range: float,
         method: Literal["norm", "truncnorm", "uniform"],
-    ) -> np.ndarray[float]:
+    ) -> NDArray[np.float64]:
         """Generate a distribution of parameter values based on the specified method.
 
         Parameters
@@ -702,7 +778,7 @@ class PestIesSolver(PestSolver):
         standard_deviation: float,
         correlation_coefficient: float = 0.0,
         seed: int = pyemu.en.SEED,
-    ) -> np.ndarray[float]:
+    ) -> NDArray[np.float64]:
         """Generate a matrix of normally distributed and optionally correlated noise
 
         Parameters
@@ -720,7 +796,7 @@ class PestIesSolver(PestSolver):
 
         Returns
         -------
-        np.ndarray (nobs, ies_num_reals) matrix
+        NDArray[np.float64] (nobs, ies_num_reals) matrix
         """
         drng = np.random.default_rng(seed)
 
@@ -792,7 +868,7 @@ class PestIesSolver(PestSolver):
         standard_deviation: float = 0.0,
         correlation_coefficient: float = 0.0,
         ies_add_base: bool = True,
-    ):
+    ) -> None:
         """
         Generate and write an ensemble of observation noise to a CSV file.
 
@@ -968,20 +1044,21 @@ class PestIesSolver(PestSolver):
 
     @staticmethod
     def jacobian_emperical(
-        simulation_ensembles: np.ndarray, parameter_ensembles: np.ndarray
-    ) -> np.ndarray:
+        simulation_ensembles: NDArray[np.float64],
+        parameter_ensembles: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
         """Calculate the approximate Jacobian matrix for the given ensembles.
 
         Parameters
         ----------
-        simulation_ensembles : np.ndarray
+        simulation_ensembles : NDArray[np.float64]
             Ensembles of the simulated values of shape (nobs, nreals)
-        parameter_ensembles : np.ndarray
+        parameter_ensembles : NDArray[np.float64]
             Ensembles of the paramters of shape (nreals, npar)
 
         Returns
         -------
-        np.ndarray
+        NDArray[np.float64]
             Approximate, empirical Jacobian matrix
         """
         _, ies_num_reals_sim = simulation_ensembles.shape
@@ -1005,7 +1082,7 @@ class PestIesSolver(PestSolver):
 
     def solve(
         self, run_ensembles: bool = False, **kwargs
-    ) -> Tuple[bool, np.ndarray, np.ndarray]:
+    ) -> tuple[bool, NDArray[np.float64], NDArray[np.float64]]:
         """
         Gets the base realization of the parameter ensemble.
 
@@ -1045,16 +1122,17 @@ class PestSenSolver(PestSolver):
 
     def __init__(
         self,
-        exe_name: Union[str, Path] = "pestpp-sen",
-        model_ws: Union[str, Path] = Path("model"),
-        temp_ws: Union[str, Path] = Path("temp"),
-        master_ws: Union[str, Path] = Path("master"),
+        exe_name: str | Path = "pestpp-sen",
+        model_ws: str | Path = Path("model"),
+        temp_ws: str | Path = Path("temp"),
+        master_ws: str | Path = Path("master"),
         noptmax: int = 0,
-        control_data: Optional[dict] = None,
-        pcov: Optional[DataFrame] = None,
-        nfev: Optional[int] = None,
+        control_data: dict[str, Any] | None = None,
+        pcov: DataFrame | None = None,
+        nfev: int | None = None,
         port_number: int = 4004,
-        num_workers: Optional[int] = None,
+        num_workers: int | None = None,
+        use_pypestworker: bool = True,
         **kwargs,
     ) -> None:
         """
@@ -1063,26 +1141,29 @@ class PestSenSolver(PestSolver):
 
         Parameters
         ----------
-        exe_name : Union[str, Path], optional
+        exe_name : str | Path, optional
             The name of the executable to run, by default "pestpp-sen".
-        model_ws : Union[str, Path], optional
+        model_ws : str | Path, optional
             The working directory for the model, by default Path("model").
-        temp_ws : Union[str, Path], optional
+        temp_ws : str | Path, optional
             The temporary working directory, by default Path("temp").
-        master_ws : Union[str, Path], optional
-            The master working directory, by default Path("master").
+        master_ws : str | Path, optional
+            The master working directory, by default Path("master") unless
+            use_pypestworker is True, then master_ws is equal to temp_ws.
         noptmax : int, optional
             The maximum number of optimization iterations, by default 0.
-        control_data : Optional[dict], optional
+        control_data : dict[str, Any] | None, optional
             Control data for the solver, by default None.
-        pcov : Optional[DataFrame], optional
+        pcov : DataFrame | None, optional
             The parameter covariance matrix, by default None.
-        nfev : Optional[int], optional
+        nfev : int | None, optional
             The number of function evaluations, by default None.
         port_number : int, optional
             The port number for communication, by default 4004.
-        num_workers : Optional[int], optional
+        num_workers : int | None, optional
             The number of worker processes, by default the number of physical CPU cores.
+        use_pypestworker : bool, optional
+            Whether to use the PyPestWorker for Python processing. Default is True.
         **kwargs
             Additional keyword arguments.
 
@@ -1097,18 +1178,19 @@ class PestSenSolver(PestSolver):
             temp_ws=temp_ws,
             pcov=pcov,
             nfev=nfev,
+            port_number=port_number,
+            use_pypestworker=use_pypestworker,
             **kwargs,
         )
-        self.master_ws = master_ws
+        self.master_ws = temp_ws if self.use_pypestworker else master_ws
         self.noptmax = noptmax
         self.control_data = control_data
-        self.port_number = port_number
         self.num_workers = (
             cpu_count(logical=False) if num_workers is None else num_workers
         )
 
     def start(
-        self, pestpp_options: Optional[Dict] = None, silent: bool = False
+        self, pestpp_options: dict[str, Any] | None = None, silent: bool = False
     ) -> None:
         """
         Start the PESTPP-SEN analysis.
@@ -1118,7 +1200,7 @@ class PestSenSolver(PestSolver):
 
         Parameters
         ----------
-        pestpp_options : Optional[Dict], optional
+        pestpp_options : dict[str, Any], optional
             Additional PEST++ options to update in the PEST control file, by default None.
 
         Returns
@@ -1144,8 +1226,15 @@ class PestSenSolver(PestSolver):
             worker_root=self.master_ws.parent,  # where to deploy the agent directories; relative to where python is running
             port=self.port_number,  # the port to use for communication
             master_dir=self.master_ws,  # the manager directory
+            reuse_master=self.use_pypestworker,
             verbose=silent,
             silent_master=silent,
+            ppw_function=self.ppw_function
+            if self.use_pypestworker
+            else None,  # the function to run in the agent
+            ppw_kwargs={"ml": self.ml}
+            if self.use_pypestworker
+            else {},  # the arguments to pass to the ppw_function
         )
 
     def solve() -> None:
