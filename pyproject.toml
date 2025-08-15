@@ -37,7 +37,7 @@ repository = "https://github.com/pastas/pastas-plugins"
 documentation = "https://pastas.readthedocs.io"
 
 [project.optional-dependencies]
-all = ["pastas_plugins[modflow,crosscorrelation]"]
+all = ["pastas_plugins[modflow,crosscorrelation,pest]"]
 crosscorrelation = ["statsmodels"]
 modflow = ["flopy"]
 pest = ["pyemu>=1.3.8"]
