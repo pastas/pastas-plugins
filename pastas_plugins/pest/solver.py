@@ -152,6 +152,7 @@ class PestSolver(BaseSolver):
         # observations
         observations = self.ml.observations()
         observations.name = "Observations"
+        observations.index.name = "Datetime"
         observations.to_csv(self.model_ws / "simulation.csv")
         copy_file(self.model_ws / "simulation.csv", self.temp_ws)
         self.observations = observations
@@ -175,7 +176,10 @@ class PestSolver(BaseSolver):
                     "constant_d",
                     pmax=np.max(observations.values) + np.std(observations.values),
                 )
-
+        if self.ml.parameters.index.str.rsplit("_").str[0].str.isupper().any():
+            logger.error(
+                "pestpp is case insensitive so any capitalized parameters (stress model names) can cause issues in the solver."
+            )
         par_sel = parameters.loc[:, ["optimal"]]
         par_sel.to_csv(self.model_ws / "parameters_sel.csv")
         copy_file(self.model_ws / "parameters_sel.csv", self.temp_ws)
