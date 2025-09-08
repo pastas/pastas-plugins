@@ -251,7 +251,7 @@ class PestSolver(BaseSolver):
         pst.control_data.noptmax = self.noptmax  # optimization runs
         if self.control_data is not None:
             for key, value in self.control_data.items():
-                if key == "control_data":
+                if key == "noptmax":
                     logger.warning(
                         "noptmax is set as an attribute and can't be set using the `control_data` dictionary"
                     )
@@ -275,6 +275,16 @@ class PestSolver(BaseSolver):
         pyemu.os_utils.run(
             f"{self.exe_name.name} pest.pst{arg_str}", cwd=self.pf.new_d, verbose=silent
         )
+
+    def initialize(self, version: int = 2) -> None:
+        """Initialize the solver by setting up the model and files."""
+        if self.ml is None:
+            raise ValueError("No Pastas model assigned to the solver.")
+        if self.pf.pst is None:
+            self.setup_model()
+            self.setup_files(version=version)
+        else:
+            logger.info("Solver is already initialized.")
 
 
 class PestGlmSolver(PestSolver):
@@ -360,8 +370,8 @@ class PestGlmSolver(PestSolver):
             The standard errors of the optimal parameters.
         """
 
-        self.setup_model()
-        self.setup_files()
+        self.initialize(version=2)
+
         if self.use_pypestworker:
             pyemu.os_utils.start_workers(
                 worker_dir=self.temp_ws,  # the folder which contains the "template" PEST dataset
@@ -493,8 +503,7 @@ class PestHpSolver(PestSolver):
         stderr : NDArray[np.float64]
             The standard errors of the optimal parameters.
         """
-        self.setup_model()
-        self.setup_files(version=1)
+        self.initialize(version=1)
         # start consecutive thread for pest_hp and agent_hp excutable
         threads = [
             Thread(target=self.run, args=(f" /h :{self.port_number}", silent)),
@@ -600,6 +609,7 @@ class PestIesSolver(PestSolver):
             temp_ws=temp_ws,
             pcov=pcov,
             nfev=nfev,
+            control_data=control_data,
             port_number=port_number,
             use_pypestworker=use_pypestworker,
             **kwargs,
@@ -608,7 +618,6 @@ class PestIesSolver(PestSolver):
         self.master_ws = temp_ws if self.use_pypestworker else master_ws
         self.noptmax = noptmax
         self.ies_num_reals = ies_num_reals
-        self.control_data = control_data
         self.num_workers = (
             cpu_count(logical=False) if num_workers is None else num_workers
         )
@@ -649,8 +658,7 @@ class PestIesSolver(PestSolver):
         -------
         None
         """
-        self.setup_model()
-        self.setup_files()
+        self.initialize(version=2)
 
         # change ies_num_reals
         pst = pyemu.Pst(str(self.temp_ws / "pest.pst"))
@@ -1106,9 +1114,9 @@ class PestIesSolver(PestSolver):
             - numpy.ndarray: The standard error of the parameters.
         """
         if "noise" in kwargs:
-            del(kwargs["noise"])  # remove noise from kwargs, not used in PestIesSolver
+            del kwargs["noise"]  # remove noise from kwargs, not used in PestIesSolver
         if "weights" in kwargs:
-            del(kwargs["weights"])
+            del kwargs["weights"]
 
         if run_ensembles:
             self.run_ensembles(**kwargs)
@@ -1138,6 +1146,7 @@ class PestIesSolver(PestSolver):
         stderr[self.vary] = ipar.std(axis=1) / np.sqrt(len(ipar.columns))
 
         return optimal, stderr
+
 
 class PestSenSolver(PestSolver):
     """PESTPP-SEN (Global Sensitivity Analysis) solver"""
@@ -1200,13 +1209,13 @@ class PestSenSolver(PestSolver):
             temp_ws=temp_ws,
             pcov=pcov,
             nfev=nfev,
+            control_data=control_data,
             port_number=port_number,
             use_pypestworker=use_pypestworker,
             **kwargs,
         )
         self.master_ws = temp_ws if self.use_pypestworker else master_ws
         self.noptmax = noptmax
-        self.control_data = control_data
         self.num_workers = (
             cpu_count(logical=False) if num_workers is None else num_workers
         )
@@ -1230,8 +1239,7 @@ class PestSenSolver(PestSolver):
         None
         """
 
-        self.setup_model()
-        self.setup_files()
+        self.initialize(version=2)
 
         # change ies_num_reals
         pst = pyemu.Pst(str(self.temp_ws / "pest.pst"))
