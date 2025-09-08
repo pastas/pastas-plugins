@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def run() -> None:
+    """Run function for PEST (from files)"""
     # load packages
     from pathlib import Path
 
@@ -53,6 +54,7 @@ def run_pypestworker(
     port: int,
     ml: Model,
 ) -> None:
+    """Run function for PEST using the PyPestWorker (in memory)"""
     ppw = pyemu.os_utils.PyPestWorker(
         pst=pst,
         host=host,
