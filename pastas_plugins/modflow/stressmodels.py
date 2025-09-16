@@ -22,7 +22,7 @@ class ModflowModel(StressModelBase):
 
     def __init__(
         self,
-        ml: Model,
+        model: Model,
         exe_name: str | Path,
         sim_ws: str | Path,
         tmin: Timestamp | None = None,
@@ -32,15 +32,15 @@ class ModflowModel(StressModelBase):
         solver_kwargs: dict[str, Any] | None = None,
     ) -> None:
         if tmin is None:
-            if ml.settings["tmax"] is None:
-                tmin = ml.oseries.settings["tmin"] - ml.settings["warmup"]
+            if model.settings["tmax"] is None:
+                tmin = model.oseries.settings["tmin"] - model.settings["warmup"]
             else:
-                tmin = ml.settings["tmin"] - ml.settings["warmup"]
+                tmin = model.settings["tmin"] - model.settings["warmup"]
         if tmax is None:
             tmax = (
-                ml.settings["tmax"]
-                if ml.settings["tmax"] is not None
-                else ml.oseries.settings["tmax"]
+                model.settings["tmax"]
+                if model.settings["tmax"] is not None
+                else model.oseries.settings["tmax"]
             )
         StressModelBase.__init__(
             self,
@@ -49,12 +49,13 @@ class ModflowModel(StressModelBase):
             tmax=tmax,
             rfunc=None,
         )
-        self.ml = ml
-        if "constant_d" in ml.parameters.index:
-            ml.del_constant()
+        self.model = model
+        self.model.add_stressmodel(self) # add as stressmodel to pastas model
+        if "constant_d" in model.parameters.index:
+            model.del_constant()
             logger.info(
                 "Make sure to delete the model parameter constant_d "
-                "(`ml.del_constant('constant_d')`). Base elevation is now controlled by "
+                "(`model.del_constant('constant_d')`). Base elevation is now controlled by "
                 "parameter `_d`."
             )
         self.exe_name = exe_name
@@ -78,11 +79,12 @@ class ModflowModel(StressModelBase):
             "STO": ModflowSto(),
         }
         self._simulation, self._gwf = self.setup_modflow_simulation()
+        
 
     @property
     def nper(self) -> int:
         """Number of stress periods."""
-        return len(date_range(self.tmin, self.tmax, freq=self.ml.settings["freq"]))
+        return len(date_range(self.tmin, self.tmax, freq=self.model.settings["freq"]))
 
     @property
     def nparam(self) -> int:
@@ -106,7 +108,7 @@ class ModflowModel(StressModelBase):
                 for stress_name, stress_series in pack_stress.items():
                     ts = TimeSeries(stress_series, settings=stress_name)
                     ts.update_series(
-                        tmin=self.tmin, tmax=self.tmax, freq=self.ml.settings["freq"]
+                        tmin=self.tmin, tmax=self.tmax, freq=self.model.settings["freq"]
                     )
                     setattr(pack, stress_name, ts.series)
 
@@ -132,9 +134,9 @@ class ModflowModel(StressModelBase):
         )
         if f"{self.name}_d" in pdf.index:
             pdf.loc[f"{self.name}_d", ["initial", "pmin", "pmax"]] = (
-                self.ml.oseries.series.mean(),
-                self.ml.oseries.series.min() - self.ml.oseries.series.std(),
-                self.ml.oseries.series.max() + self.ml.oseries.series.std(),
+                self.model.oseries.series.mean(),
+                self.model.oseries.series.min() - self.model.oseries.series.std(),
+                self.model.oseries.series.max() + self.model.oseries.series.std(),
             )
         if pdf.index.duplicated(keep="first").any():
             pdf = pdf[~pdf.index.duplicated(keep="first")]
@@ -151,7 +153,7 @@ class ModflowModel(StressModelBase):
             index=date_range(
                 start=self.tmin,
                 end=self.tmax,
-                freq=self.ml.settings["freq"],
+                freq=self.model.settings["freq"],
             ),
         )
 
