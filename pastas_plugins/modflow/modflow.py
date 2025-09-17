@@ -351,7 +351,7 @@ class ModflowUzf:
             packagedata=uzf_pkdat,
             perioddata=perioddata,
             timeseries=ts_dict,
-            filename=f"{self._name}.uzf",
+            filename=f"{modflow_gwf.name}.uzf",
             pname=self._name,
         )
         uzf.write()
