@@ -1,7 +1,4 @@
 import logging
-import functools
-import logging
-from abc import abstractmethod
 from typing import Any, Literal, Protocol, runtime_checkable
 
 import flopy
@@ -56,7 +53,7 @@ class ModflowDis:
             delc=1,
             top=d - H,
             botm=d - 2 * H,
-            #idomain=1,
+            # idomain=1,
             pname=self._name,
         )
         dis.write()
@@ -116,11 +113,11 @@ class ModflowSto:
         sto = flopy.mf6.ModflowGwfsto(
             modflow_gwf,
             save_flows=False,
-            #iconvert=1,
+            # iconvert=1,
             ss=S / haq,
-            #sy=S,
+            # sy=S,
             transient=True,
-            #ss_confined_only=True,
+            # ss_confined_only=True,
             pname=self._name,
         )
         sto.write()

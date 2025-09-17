@@ -50,7 +50,7 @@ class ModflowModel(StressModelBase):
             rfunc=None,
         )
         self.model = model
-        self.model.add_stressmodel(self) # add as stressmodel to pastas model
+        self.model.add_stressmodel(self)  # add as stressmodel to pastas model
         if "constant_d" in model.parameters.index:
             model.del_constant()
             logger.info(
@@ -79,7 +79,6 @@ class ModflowModel(StressModelBase):
             "STO": ModflowSto(),
         }
         self._simulation, self._gwf = self.setup_modflow_simulation()
-        
 
     @property
     def nper(self) -> int:
