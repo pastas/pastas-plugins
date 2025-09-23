@@ -69,9 +69,9 @@ class ModflowIc:
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
             {
-                "initial": [1.0],
-                "pmin": [0.0],
-                "pmax": [10.0],
+                "initial": [0.0],
+                "pmin": [np.nan],
+                "pmax": [np.nan],
                 "vary": [True],
                 "name": [name],
                 "dist": ["uniform"],
