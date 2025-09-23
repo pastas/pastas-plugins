@@ -43,6 +43,8 @@ class ModflowDis:
         self, modflow_gwf: flopy.mf6.ModflowGwf, d: float, H: float = 1.0
     ) -> None:
         """Update the discretization package."""
+        botm = d - 100.0
+        top = d + H
         dis = flopy.mf6.ModflowGwfdis(
             modflow_gwf,
             length_units="METERS",
@@ -51,8 +53,8 @@ class ModflowDis:
             ncol=1,
             delr=1,
             delc=1,
-            top=d - H,
-            botm=d - 2 * H,
+            top=top,
+            botm=botm,
             # idomain=1,
             pname=self._name,
         )
