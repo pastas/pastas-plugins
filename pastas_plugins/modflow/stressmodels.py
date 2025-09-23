@@ -112,6 +112,7 @@ class ModflowModel(StressModelBase):
                     setattr(pack, stress_name, ts.series)
 
         self.set_init_parameters()
+        self.model.add_stressmodel(self, replace=True)  # add as stressmodel to pastas model
 
     @property
     def package_parameter_names(self) -> dict[str, list[str]]:
