@@ -634,6 +634,7 @@ class PestIesSolver(PestSolver):
         | None = None,
         pestpp_options: dict[str, Any] | None = None,
         silent: bool = False,
+        seed: int = pyemu.en.SEED,
     ) -> None:
         """
         Run ensemble simulations using pestpp-ies.
@@ -656,6 +657,7 @@ class PestIesSolver(PestSolver):
             If None the parameter distribution is drawn by pestpp-ies itself.
         pestpp_options : dict | None, optional
             Additional PEST++ options, by default None.
+
         Returns
         -------
         None
@@ -673,6 +675,7 @@ class PestIesSolver(PestSolver):
             self.write_ensemble_observation_noise(
                 standard_deviation=observation_noise_standard_deviation,
                 correlation_coefficient=observation_noise_correlation_coefficient,
+                seed=seed,
             )
             pst.pestpp_options["ies_observation_ensemble"] = (
                 "pest_starting_obs_ensemble.csv"
@@ -682,6 +685,7 @@ class PestIesSolver(PestSolver):
                 method=ies_parameter_ensemble_method,
                 par_sigma_range=par_sigma_range,
                 ies_add_base=ies_add_base,
+                seed=seed,
             )
             pst.pestpp_options["ies_parameter_ensemble"] = (
                 "pest_starting_par_ensemble.csv"
@@ -882,6 +886,7 @@ class PestIesSolver(PestSolver):
         standard_deviation: float = 0.0,
         correlation_coefficient: float = 0.0,
         ies_add_base: bool = True,
+        seed: int = pyemu.en.SEED,
     ) -> None:
         """
         Generate and write an ensemble of observation noise to a CSV file.
@@ -907,7 +912,7 @@ class PestIesSolver(PestSolver):
             nobs=len(pst.observation_data.index),
             standard_deviation=standard_deviation,
             correlation_coefficient=correlation_coefficient,
-            seed=pyemu.en.SEED,
+            seed=seed,
         )
         obs_data = pst.observation_data.loc[:, ["obsval"]].values
         obs_noise_df = pd.DataFrame(
