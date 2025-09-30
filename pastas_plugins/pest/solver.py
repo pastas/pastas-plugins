@@ -160,6 +160,9 @@ class PestSolver(BaseSolver):
         self.observations = observations
 
         # setup parameters
+        # initial_parameters = self.ml.parameters["initial"].copy()
+        # for pname, val in initial_parameters.items():
+        #     self.ml.set_parameter(pname, optimal=val)
         self.ml.parameters.loc[:, "optimal"] = self.ml.parameters.loc[:, "initial"]
         self.vary = self.ml.parameters.vary.values.astype(bool)
         parameters = self.ml.parameters[self.vary].copy()
@@ -371,7 +374,6 @@ class PestGlmSolver(PestSolver):
         stderr : NDArray[np.float64]
             The standard errors of the optimal parameters.
         """
-
         self.initialize(version=2)
 
         if self.use_pypestworker:
@@ -400,7 +402,7 @@ class PestGlmSolver(PestSolver):
         # covariance
         pcov = pd.read_csv(
             self.temp_ws / f"pest.{self.nfev}.post.cov",
-            sep="\s+",
+            sep=r"\s+",
             skiprows=[0],
             nrows=len(ipar.index),
             header=None,
@@ -518,13 +520,19 @@ class PestHpSolver(PestSolver):
             t.join()
 
         par = pd.read_csv(
-            self.temp_ws / "pest.par", index_col=0, sep="\s+", skiprows=[0], header=None
+            self.temp_ws / "pest.par",
+            index_col=0,
+            sep=r"\s+",
+            skiprows=[0],
+            header=None,
         )
         par.index = self.ml.parameters.index[self.vary]
         optimal = self.ml.parameters["initial"].copy().values
         optimal[self.vary] = par.iloc[:, 0].values
 
-        ofr = pd.read_csv(self.temp_ws / "pest.ofr", index_col=0, sep="\s+", skiprows=2)
+        ofr = pd.read_csv(
+            self.temp_ws / "pest.ofr", index_col=0, sep=r"\s+", skiprows=2
+        )
         self.nfev = ofr.index[-1]
         self.obj_func = ofr.at[self.nfev, "total"]
 
