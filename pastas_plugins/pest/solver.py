@@ -291,6 +291,25 @@ class PestSolver(BaseSolver):
         else:
             logger.info("Solver is already initialized.")
 
+    @staticmethod
+    def download_executable(path: Path | str, subset: list[str] | None) -> None:
+        """Download the PEST++ executable if it does not exist.
+
+        Parameters
+        ----------
+        path : Path
+            The directory where the executable should be located.
+        subset : str | list[str] | None
+            A list of strings to filter the executable download,
+            e.g.: ["pestpp-glm", "pestpp-ies"]. If None, no filtering
+            is applied and all available executables are downloaded.
+
+        Returns
+        -------
+        None
+        """
+        pyemu.utils.get_pestpp(str(path), subset=subset, force=True)
+
 
 class PestGlmSolver(PestSolver):
     """PESTPP-GLM (Gauss-Levenberg-Marquardt) solver"""
