@@ -53,6 +53,8 @@ rtd = [
         "numpydoc",
         "sphinx_design",
         "tqdm",
+        "xarray",
+        "cmcrameri",
 ]
 
 [tool.setuptools.dynamic]
