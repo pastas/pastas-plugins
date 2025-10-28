@@ -22,6 +22,7 @@ from scipy.stats import norm, truncnorm
 
 logger = logging.getLogger(__name__)
 
+PYPESTWORKER_TIMEOUT = 0.05
 
 def run() -> None:
     """Run function for PEST (from files)"""
@@ -59,6 +60,7 @@ def run_pypestworker(
         pst=pst,
         host=host,
         port=port,
+        timeout=PYPESTWORKER_TIMEOUT,
         verbose=False,
     )
     pvals = ppw.get_parameters()
