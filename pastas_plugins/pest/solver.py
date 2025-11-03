@@ -1056,12 +1056,12 @@ class PestIesSolver(PestSolver):
             iteration=iteration, from_file=True
         ).transpose()
         par_ies = self.parameter_ensemble(iteration=iteration)
-        jac = PestIesSolver.jacobian_emperical(obs_ies.values, par_ies.values)
+        jac = PestIesSolver.jacobian_empirical(obs_ies.values, par_ies.values)
         jac_ies = pd.DataFrame(jac, index=obs_ies.index, columns=par_ies.columns)
         return jac_ies
 
     @staticmethod
-    def jacobian_emperical(
+    def jacobian_empirical(
         simulation_ensembles: NDArray[np.float64],
         parameter_ensembles: NDArray[np.float64],
     ) -> NDArray[np.float64]:
@@ -1286,7 +1286,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
     def __init__(
         self,
         num_reals: int,
-        jacobian_method: Literal["2-point", "3-point", "emperical"] = "3-point",
+        jacobian_method: Literal["2-point", "3-point", "empirical"] = "3-point",
         noptmax: int | None = None,
         seed: int | None = pyemu.en.SEED,
         add_base: bool = True,
@@ -1298,9 +1298,9 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         super().__init__(pcov=pcov, nfev=nfev, **kwargs)
         self.num_reals = num_reals
         self.jacobian_method = jacobian_method
-        if noptmax is None and jacobian_method == "emperical":
+        if noptmax is None and jacobian_method == "empirical":
             logger.error(
-                "noptmax must be specified when using 'emperical' jacobian method."
+                "noptmax must be specified when using 'empirical' jacobian method."
             )
         self.noptmax = noptmax
         self.seed = seed
@@ -1393,11 +1393,11 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         return obs_df
 
     @staticmethod
-    def jacobian_emperical(
+    def jacobian_empirical(
         simulation_ensembles: ArrayLike, parameter_ensembles: ArrayLike
     ) -> ArrayLike:
         """Approximate the Jacobian matrix using ensemble perturbations."""
-        return PestIesSolver.jacobian_emperical(
+        return PestIesSolver.jacobian_empirical(
             simulation_ensembles=simulation_ensembles,
             parameter_ensembles=parameter_ensembles,
         )
@@ -1470,7 +1470,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
             ml.parameters.loc[p0.index, "pmax"].values,
         )
         if jacobian is None:
-            jacobian = RandomizedMaximumLikelihoodSolver.jacobian_emperical(
+            jacobian = RandomizedMaximumLikelihoodSolver.jacobian_empirical(
                 simulation_ensembles=sims.values,
                 parameter_ensembles=parameter_ensemble.values,
             )
@@ -1545,7 +1545,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                 ]
                 self.simulation_ensemble = pd.concat([f.result() for f in sims], axis=1)
 
-        elif self.jacobian_method == "emperical":
+        elif self.jacobian_method == "empirical":
             parameter_ensemble = self.parameter_ensemble.copy()
             for _ in tqdm(range(self.noptmax), desc="RML looping over noptmax"):
                 # simulate ensembles in parallel
@@ -1562,7 +1562,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                     simulations = pd.concat([f.result() for f in futures], axis=1)
 
                 # one least squares update
-                jacobian = RandomizedMaximumLikelihoodSolver.jacobian_emperical(
+                jacobian = RandomizedMaximumLikelihoodSolver.jacobian_empirical(
                     simulation_ensembles=simulations.loc[
                         self.observation_ensemble.index
                     ].values,
