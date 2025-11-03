@@ -22,7 +22,6 @@ from scipy.stats import norm, truncnorm
 
 logger = logging.getLogger(__name__)
 
-PYPESTWORKER_TIMEOUT = 0.05
 
 def run() -> None:
     """Run function for PEST (from files)"""
@@ -54,13 +53,14 @@ def run_pypestworker(
     host: int,
     port: int,
     ml: Model,
+    timeout: float = 0.1,
 ) -> None:
     """Run function for PEST using the PyPestWorker (in memory)"""
     ppw = pyemu.os_utils.PyPestWorker(
         pst=pst,
         host=host,
         port=port,
-        timeout=PYPESTWORKER_TIMEOUT,
+        timeout=timeout,
         verbose=False,
     )
     pvals = ppw.get_parameters()
