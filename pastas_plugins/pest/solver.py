@@ -1086,12 +1086,12 @@ class PestIesSolver(PestSolver):
             iteration=iteration, from_file=True
         ).transpose()
         par_ies = self.parameter_ensemble(iteration=iteration)
-        jac = PestIesSolver.jacobian_emperical(obs_ies.values, par_ies.values)
+        jac = PestIesSolver.jacobian_empirical(obs_ies.values, par_ies.values)
         jac_ies = pd.DataFrame(jac, index=obs_ies.index, columns=par_ies.columns)
         return jac_ies
 
     @staticmethod
-    def jacobian_emperical(
+    def jacobian_empirical(
         simulation_ensembles: NDArray[np.float64],
         parameter_ensembles: NDArray[np.float64],
     ) -> NDArray[np.float64]:
