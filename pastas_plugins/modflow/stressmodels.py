@@ -5,8 +5,11 @@ from pathlib import Path
 from typing import Any
 
 import flopy
+import modflowapi
 import numpy as np
+import pandas as pd
 from pandas import Series, Timestamp, concat, date_range
+from pastas.decorators import conditional_cachedmethod
 from pastas.model import Model
 from pastas.stressmodels import StressModelBase
 from pastas.timeseries import TimeSeries
@@ -78,7 +81,7 @@ class ModflowModel(StressModelBase):
             "STO": ModflowSto(),
         }
         self._simulation, self._gwf = self.setup_modflow_simulation()
-        self.model.add_stressmodel(self)  # add as stressmodel to pastas model
+        # self.model.add_stressmodel(self)  # add as stressmodel to pastas model
 
     @property
     def nper(self) -> int:
@@ -97,22 +100,25 @@ class ModflowModel(StressModelBase):
         if isinstance(package, ModflowPackage):
             package = [package]
 
-        for pack in package:
-            if pack._name in self._packages:
-                logger.warning(f"Package {pack._name} already exists. Overwriting it.")
-            self._packages[pack._name] = pack
-            pack_stress = pack.stress()
-            if pack_stress is not None:
+        for ipkg in package:
+            if ipkg._name in self._packages:
+                logger.warning(f"Package {ipkg._name} already exists. Overwriting it.")
+            self._packages[ipkg._name] = ipkg
+            ipkg_stress = ipkg.stress()
+            if ipkg_stress is not None:
                 # make sure the stresses are in the right time range
-                for stress_name, stress_series in pack_stress.items():
+                for stress_name, stress_series in ipkg_stress.items():
                     ts = TimeSeries(stress_series, settings=stress_name)
                     ts.update_series(
                         tmin=self.tmin, tmax=self.tmax, freq=self.model.settings["freq"]
                     )
-                    setattr(pack, stress_name, ts.series)
+                    setattr(ipkg, stress_name, ts.series)
 
         self.set_init_parameters()
-        self.model.add_stressmodel(self, replace=True)  # add as stressmodel to pastas model
+        # TODO: is this necessary?
+        # self.model.add_stressmodel(
+        #     self, replace=True
+        # )  # add as stressmodel to pastas model
 
     @property
     def package_parameter_names(self) -> dict[str, list[str]]:
@@ -130,39 +136,46 @@ class ModflowModel(StressModelBase):
     def set_init_parameters(self) -> None:
         """Set the initial parameters back to their default values."""
         pdf = concat(
-            [p.get_init_parameters(self.name) for p in self._packages.values()], axis=0
+            [p.get_init_parameters(nam) for nam, p in self._packages.items()], axis=0
         )
-        if f"{self.name}_d" in pdf.index:
-            pdf.loc[f"{self.name}_d", ["initial", "pmin", "pmax"]] = (
+        # drop constant_d duplicates
+        if pdf.index.duplicated(keep="first").any():
+            pdf = pdf[~pdf.index.duplicated(keep="first")]
+        if "constant_d" in pdf.index:
+            pdf.loc["constant_d", ["initial", "pmin", "pmax"]] = (
                 self.model.oseries.series.mean(),
                 self.model.oseries.series.min() - self.model.oseries.series.std(),
                 self.model.oseries.series.max() + self.model.oseries.series.std(),
             )
-        if pdf.index.duplicated(keep="first").any():
-            pdf = pdf[~pdf.index.duplicated(keep="first")]
         self.parameters = pdf
 
     def to_dict(self) -> dict:
         raise NotImplementedError()
 
-    def simulate(self, p: ArrayLike, *args: Any) -> Series:
+    def simulate(
+        self, p: ArrayLike, *args: Any, tmin=None, tmax=None, **kwargs
+    ) -> Series:
         """Run the MODFLOW simulation and return the head time series."""
-        h = self.get_head(p=p)
-        return Series(
-            data=h,
+        s = Series(
+            data=self.get_head(p=tuple(p)),
             index=date_range(
                 start=self.tmin,
                 end=self.tmax,
                 freq=self.model.settings["freq"],
             ),
         )
+        if tmin is not None:
+            s = s.loc[tmin:]
+        if tmax is not None:
+            s = s.loc[:tmax]
+        return s
 
     # @lru_cache(maxsize=None)
-    def get_head(self, p: ArrayLike) -> np.ndarray:
+    @conditional_cachedmethod(lambda self: self._cache)
+    def get_head(self, p: tuple) -> np.ndarray:
         """Run the MODFLOW simulation and return the head values."""
         self.update_model(p=p)
         success, _ = self._simulation.run_simulation(silent=self.silent)
-
         if success:
             return self._gwf.output.head().get_ts((0, 0, 0))[:, 1]
         else:
@@ -179,8 +192,12 @@ class ModflowModel(StressModelBase):
         p_series = Series(p, index=self.parameters.index)
         for name, package in self._packages.items():
             self._remove_changing_package(package_name=name)
-            pnames = [f"{self.name}_{x}" for x in self.package_parameter_names[name]]
+            pnames = [
+                f"{name}_{x}" if x != "d" else "constant_d"
+                for x in self.package_parameter_names[name]
+            ]
             p_dict = {k.rsplit("_", 1)[-1]: v for k, v in p_series.loc[pnames].items()}
+            logger.debug(f"Updating package {name} with parameters {p_dict}")
             package.update_package(modflow_gwf=self._gwf, **p_dict)
         self._gwf.name_file.write()
 
@@ -249,3 +266,322 @@ solver_kwargs_uzf = dict(
     preconditioner_levels=8,
     preconditioner_drop_tolerance=0.001,
 )
+
+
+class ModflowModelApi(StressModelBase):
+    _name = "ModflowModelApi"
+
+    def __init__(
+        self,
+        model: Model,
+        dll: str | Path,
+        sim_ws: str | Path,
+        tmin: Timestamp | None = None,
+        tmax: Timestamp | None = None,
+        silent: bool = True,
+        raise_on_modflow_error: bool = False,
+        solver_kwargs: dict[str, Any] | None = None,
+    ) -> None:
+        if tmin is None:
+            if model.settings["tmax"] is None:
+                tmin = model.oseries.settings["tmin"] - model.settings["warmup"]
+            else:
+                tmin = model.settings["tmin"] - model.settings["warmup"]
+        if tmax is None:
+            tmax = (
+                model.settings["tmax"]
+                if model.settings["tmax"] is not None
+                else model.oseries.settings["tmax"]
+            )
+        super().__init__(
+            name="api",
+            tmin=tmin,
+            tmax=tmax,
+            rfunc=None,
+        )
+        self.model = model
+        if "constant_d" in model.parameters.index:
+            model.del_constant()
+            logger.info(
+                "Make sure to delete the model parameter constant_d "
+                "(`model.del_constant('constant_d')`). Base elevation is now controlled by "
+                "parameter `_d`."
+            )
+        self.dll = dll
+        self.sim_ws = sim_ws
+        self.raise_on_modflow_error = raise_on_modflow_error
+        self.solver_kwargs = (
+            dict(
+                complexity="SIMPLE",
+                outer_dvclose=1e-2,
+                inner_dvclose=1e-2,
+                rcloserecord=1e-1,
+                linear_acceleration="BICGSTAB",
+            )
+            if solver_kwargs is None
+            else solver_kwargs
+        )
+        self.silent = silent
+        self._packages: dict[str, ModflowPackage] = {
+            "DIS": ModflowDis(),
+            "IC": ModflowIc(),
+            "STO": ModflowSto(),
+        }
+        self._simulation, self._gwf = self.setup_modflow_simulation()
+
+    @property
+    def nper(self) -> int:
+        """Number of stress periods."""
+        return len(date_range(self.tmin, self.tmax, freq=self.model.settings["freq"]))
+
+    @property
+    def nparam(self) -> int:
+        """Number of parameters."""
+        return len(self.parameters)
+
+    def add_modflow_package(
+        self, package: ModflowPackage | list[ModflowPackage]
+    ) -> None:
+        """Add a Modflow package to the model."""
+        if isinstance(package, ModflowPackage):
+            package = [package]
+
+        for ipkg in package:
+            if ipkg._name in self._packages:
+                logger.warning(f"Package {ipkg._name} already exists. Overwriting it.")
+            self._packages[ipkg._name] = ipkg
+            ipkg_stress = ipkg.stress()
+            if ipkg_stress is not None:
+                # make sure the stresses are in the right time range
+                for stress_name, stress_series in ipkg_stress.items():
+                    ts = TimeSeries(stress_series, settings=stress_name)
+                    ts.update_series(
+                        tmin=self.tmin, tmax=self.tmax, freq=self.model.settings["freq"]
+                    )
+                    setattr(ipkg, stress_name, ts.series)
+
+        self.set_init_parameters()
+
+    @property
+    def package_parameter_names(self) -> dict[str, list[str]]:
+        """Get the parameter names of the packages."""
+        sigdict = {
+            name: [
+                x
+                for x in signature(package.update_package).parameters
+                if x != "modflow_gwf"
+            ]
+            for name, package in self._packages.items()
+        }
+        return sigdict
+
+    def set_init_parameters(self) -> None:
+        """Set the initial parameters back to their default values."""
+        pdf = concat(
+            [p.get_init_parameters(self.name) for nam, p in self._packages.items()], axis=0
+        )
+        # drop constant_d duplicates
+        if pdf.index.duplicated(keep="first").any():
+            pdf = pdf[~pdf.index.duplicated(keep="first")]
+        if "constant_d" in pdf.index:
+            pdf.loc["constant_d", ["initial", "pmin", "pmax"]] = (
+                self.model.oseries.series.mean(),
+                self.model.oseries.series.min() - self.model.oseries.series.std(),
+                self.model.oseries.series.max() + self.model.oseries.series.std(),
+            )
+        self.parameters = pdf
+
+        self.initialize_model(p=self.parameters["initial"].values)
+
+    def to_dict(self) -> dict:
+        raise NotImplementedError()
+
+    @conditional_cachedmethod(lambda self: self._cache)
+    def get_sim_index(self) -> pd.DatetimeIndex:
+        return date_range(
+            start=self.tmin,
+            end=self.tmax,
+            freq=self.model.settings["freq"],
+        )
+
+    def simulate(
+        self, p: ArrayLike, *args: Any, tmin=None, tmax=None, **kwargs
+    ) -> Series:
+        """Run the MODFLOW simulation and return the head time series."""
+        s = Series(data=self.get_head(p=tuple(p)), index=self.get_sim_index())
+        if tmin is not None:
+            s = s.loc[tmin:]
+        if tmax is not None:
+            s = s.loc[:tmax]
+        return s
+
+    # @lru_cache(maxsize=None)
+    @conditional_cachedmethod(lambda self: self._cache)
+    def get_head(self, p: tuple) -> np.ndarray:
+        """Run the MODFLOW simulation and return the head values."""
+        success, e, head = self.run_simulation(p=p)
+        if head is not None:
+            return head
+        elif success:
+            return self._gwf.output.head().get_ts((0, 0, 0))[:, 1]
+        else:
+            logger.error("ModflowError: model run failed with parameters: %s" % str(p))
+            if self.raise_on_modflow_error:
+                raise Exception(
+                    "Modflow run failed. Check the LIST file for more information."
+                ) from e
+            else:
+                return np.zeros(self.nper)
+
+    def initialize_model(self, p: ArrayLike) -> None:
+        """Update the model with the given parameters."""
+        p_series = Series(p, index=self.parameters.index)
+        for name, package in self._packages.items():
+            pnames = [
+                f"{name}_{x}" if x != "d" else "constant_d"
+                for x in self.package_parameter_names[name]
+            ]
+            p_dict = {k.rsplit("_", 1)[-1]: v for k, v in p_series.loc[pnames].items()}
+            package.update_package(modflow_gwf=self._gwf, **p_dict)
+        # write nam file after initialization
+        self._gwf.name_file.write()
+
+    def setup_modflow_simulation(
+        self,
+    ) -> tuple[flopy.mf6.MFSimulation, flopy.mf6.ModflowGwf]:
+        """Set up the MODFLOW simulation."""
+        sim = flopy.mf6.MFSimulation(
+            sim_name=self.name,
+            version="mf6",
+            sim_ws=self.sim_ws,
+            lazy_io=True,
+        )
+
+        _ = flopy.mf6.ModflowTdis(
+            sim,
+            time_units="DAYS",
+            nper=self.nper,
+            perioddata=[(1, 1, 1) for _ in range(self.nper)],
+        )
+
+        gwf = flopy.mf6.ModflowGwf(
+            sim,
+            modelname=self.name,
+            # newtonoptions=["NEWTON"],
+        )
+
+        _ = flopy.mf6.ModflowIms(
+            sim,
+            **self.solver_kwargs,
+        )
+
+        _ = flopy.mf6.ModflowGwfnpf(gwf, save_flows=False, icelltype=0, pname="npf")
+
+        _ = flopy.mf6.ModflowGwfoc(
+            gwf,
+            head_filerecord=f"{gwf.name}.hds",
+            saverecord=[("HEAD", "ALL")],
+        )
+        sim.write_simulation(silent=self.silent)
+        return sim, gwf
+
+    def update_model(self, p, mf6):
+        # modify params in packages
+        p_series = Series(p, index=self.parameters.index)
+        for name, ipkg in self._packages.items():
+            if hasattr(ipkg, "update_parameters"):
+                pnames = [
+                    f"{name}_{x}" if x != "d" else "constant_d"
+                    for x in self.package_parameter_names[name]
+                ]
+                p_tuple = tuple(p_series.loc[pnames].tolist())
+                ipkg.update_parameters(mf6, p_tuple)
+
+    def update_timeseries(self, mf6, kper):
+        # modify timeseries in packages
+        for name, ipkg in self._packages.items():
+            if hasattr(ipkg, "update_timeseries"):
+                ipkg.update_timeseries(mf6, kper)
+
+    @conditional_cachedmethod(lambda self: self._cache)
+    def run_simulation(self, p: tuple) -> bool:
+        store_head = False  # about 1s slower when storing head
+        if store_head:
+            head = np.zeros(self.nper, dtype=float)
+        mf6 = modflowapi.ModflowApi(self.dll, working_directory="mftest")
+        mf6.initialize()
+
+        success = False
+
+        # time loop
+        current_time = mf6.get_current_time()
+        end_time = mf6.get_end_time()
+
+        # maximum outer iterations
+        max_iter = mf6.get_value(mf6.get_var_address("MXITER", "SLN_1"))
+
+        # pre-compute recharge
+        # TODO: find a more robust way to find parameter RCH_f
+        try:
+            ipar = self.parameters.index.tolist().index("RCH_f")
+            rch = self._packages["RCH"]
+            rch.compute_recharge(f=p[ipar])
+        except ValueError:
+            # no rch
+            pass
+
+        # model time loop
+        kper = 0
+        while current_time < end_time:
+            # get dt and prepare for non-linear iterations
+            dt = mf6.get_time_step()
+            mf6.prepare_time_step(dt)
+
+            # update static packages only at start of simulation
+            if kper == 0:
+                self.update_model(p=p, mf6=mf6)
+
+            # update time series packages
+            # NOTE: it would presumably be faster to rewrite the time series
+            # file once the bug concerning the modflow API and time series is resolved
+            # (see https://github.com/MODFLOW-ORG/modflowapi/issues/85)
+            self.update_timeseries(mf6, kper)
+
+            # convergence loop
+            kiter = 0
+            mf6.prepare_solve()
+            while kiter < max_iter:
+                # solve
+                has_converged = mf6.solve()
+                kiter += 1
+
+                if has_converged:
+                    break
+
+            # finalize solve
+            mf6.finalize_solve()
+
+            # finalize time step and update time
+            mf6.finalize_time_step()
+            current_time = mf6.get_current_time()
+
+            # terminate if model did not converge
+            if not has_converged:
+                break
+
+            if store_head:
+                head[kper] = mf6.get_value_ptr("API/X").item()
+
+            # increment counter
+            kper += 1
+
+        # cleanup
+        try:
+            mf6.finalize()
+            success = True
+        except Exception as e:
+            return success, e, None
+        if store_head:
+            return success, None, head
+        else:
+            return success, None, None
