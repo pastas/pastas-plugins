@@ -7,5 +7,5 @@ from pastas_plugins.modflow.modflow import (
     ModflowSto,
     ModflowUzf,
 )
-from pastas_plugins.modflow.stressmodels import ModflowModel
+from pastas_plugins.modflow.stressmodels import ModflowModel, ModflowModelApi
 from pastas_plugins.modflow.version import __version__
