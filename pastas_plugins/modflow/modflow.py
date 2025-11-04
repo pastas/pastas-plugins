@@ -18,12 +18,16 @@ class ModflowPackage(Protocol):
         self, modflow_gwf: flopy.mf6.ModflowGwf, **kwargs: Any
     ) -> None: ...
 
+    def update_parameters(self, mf6, params: tuple, **kwargs: Any) -> None: ...
+
     def stress(self) -> dict[str, Series] | None: ...
 
 
 class ModflowDis:
     def __init__(self):
         self._name = "DIS"
+        self.parameter_addreses = {}
+        self.model_name = None
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
@@ -35,7 +39,7 @@ class ModflowDis:
                 "name": [name, name],
                 "dist": ["uniform", "uniform"],
             },
-            index=[name + "_d", name + "_H"],
+            index=["constant_d", self._name + "_H"],
         )
         return parameters
 
@@ -59,6 +63,18 @@ class ModflowDis:
             pname=self._name,
         )
         dis.write()
+        self.model_name = modflow_gwf.name.upper()
+        self.parameter_addreses = {
+            "top": f"{self.model_name}/{self._name}/TOP",
+            "bot": f"{self.model_name}/{self._name}/BOT",
+        }
+
+    def update_parameters(self, mf6, params: tuple) -> None:
+        d, H = params
+        bot = np.array([d - 100.0])
+        top = np.array([d + H])
+        mf6.set_value(self.parameter_addreses["top"], top)
+        mf6.set_value(self.parameter_addreses["bot"], bot)
 
     def stress(self) -> None:
         return None
@@ -67,6 +83,8 @@ class ModflowDis:
 class ModflowIc:
     def __init__(self):
         self._name = "IC"
+        self.parameter_addreses = {}
+        self.model_name = None
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
@@ -78,7 +96,7 @@ class ModflowIc:
                 "name": [name],
                 "dist": ["uniform"],
             },
-            index=[name + "_d"],
+            index=["constant_d"],
         )
         return parameters
 
@@ -86,6 +104,12 @@ class ModflowIc:
         """Update the initial conditions package."""
         ic = flopy.mf6.ModflowGwfic(modflow_gwf, strt=d, pname=self._name)
         ic.write()
+        self.model_name = modflow_gwf.name.upper()
+        self.parameter_addreses = {"d": f"{self.model_name}/{self._name}/STRT"}
+
+    def update_parameters(self, mf6, params) -> None:
+        (d,) = params
+        mf6.set_value(self.parameter_addreses["d"], np.array([d]))
 
     def stress(self) -> None:
         return None
@@ -94,6 +118,8 @@ class ModflowIc:
 class ModflowSto:
     def __init__(self):
         self._name = "STO"
+        self.parameter_addreses = {}
+        self.model_name = None
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
@@ -105,7 +131,7 @@ class ModflowSto:
                 "name": [name],
                 "dist": ["uniform"],
             },
-            index=[name + "_S"],
+            index=[self._name + "_S"],
         )
         return parameters
 
@@ -123,6 +149,15 @@ class ModflowSto:
             pname=self._name,
         )
         sto.write()
+        self.model_name = modflow_gwf.name.upper()
+        self.parameter_addreses = {"S": f"{modflow_gwf.name.upper()}/{self._name}/SS"}
+
+    def update_parameters(self, mf6, params) -> None:
+        (S,) = params
+        haq = mf6.get_value(f"{self.model_name}/DIS/TOP") - mf6.get_value(
+            f"{self.model_name}/DIS/BOT"
+        )
+        mf6.set_value(self.parameter_addreses["S"], S / haq)
 
     def stress(self) -> None:
         return None
@@ -131,6 +166,7 @@ class ModflowSto:
 class ModflowGhb:
     def __init__(self):
         self._name = "GHB"
+        self.parameter_adresses = {}
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
@@ -142,7 +178,7 @@ class ModflowGhb:
                 "name": [name, name],
                 "dist": ["uniform", "uniform"],
             },
-            index=[name + "_d", name + "_C"],
+            index=["constant_d", self._name + "_C"],
         )
         return parameters
 
@@ -156,6 +192,15 @@ class ModflowGhb:
             pname=self._name,
         )
         ghb.write()
+        self.parameter_adresses = {
+            "d": f"{modflow_gwf.name.upper()}/{self._name}/BHEAD",
+            "C": f"{modflow_gwf.name.upper()}/{self._name}/COND",
+        }
+
+    def update_parameters(self, mf6, params) -> None:
+        d, C = params
+        mf6.set_value(self.parameter_adresses["d"], np.array([d]))
+        mf6.set_value(self.parameter_adresses["C"], np.array([C]))
 
     def stress(self) -> None:
         return None
@@ -170,6 +215,10 @@ class ModflowRch:
         self._name = "RCH"
         self.prec = prec
         self.evap = evap
+
+        # computation variables
+        self.recharge = None
+        self.parameter_adresses = {}
         # index prec and evap on the correct times
 
     def get_init_parameters(self, name: str) -> DataFrame:
@@ -182,11 +231,15 @@ class ModflowRch:
                 "name": [name],
                 "dist": ["uniform"],
             },
-            index=[name + "_f"],
+            index=[self._name + "_f"],
         )
         return parameters
 
+    def compute_recharge(self, f: float) -> Series:
+        self.recharge = (self.prec + f * self.evap).to_numpy()
+
     def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, f: float) -> None:
+        use_timeseries = True
         rech = self.prec + f * self.evap
         rts = list(zip(range(modflow_gwf.nper + 1), np.append(rech, 0.0)))
         ts_dict = {
@@ -195,16 +248,45 @@ class ModflowRch:
             "time_series_namerecord": ["recharge"],
             "interpolation_methodrecord": ["stepwise"],
         }
+        if use_timeseries:
+            spd = {0: [[(0, 0, 0), "recharge"]]}
+            maxbound = 1
+        else:
+            # spd = {i: [[(0, 0, 0), v]] for i, v in enumerate(rech)}
+            spd = {0: [[(0, 0, 0), 0.0]]}
+            maxbound = 1
+            ts_dict = None
 
         rch = flopy.mf6.ModflowGwfrch(
             modflow_gwf,
-            maxbound=1,
-            stress_period_data={0: [[(0, 0, 0), "recharge"]]},
+            maxbound=maxbound,
+            stress_period_data=spd,
             timeseries=ts_dict,
             pname=self._name,
         )
         rch.write()
-        rch.ts.write()
+        if use_timeseries:
+            rch.ts.write()
+
+        self.model_name = modflow_gwf.name.upper()
+        self.parameter_adresses["recharge"] = f"{self.model_name}/{self._name}/RECHARGE"
+
+    def update_timeseries(self, mf6, kper) -> None:
+        # rech = (
+        #     self.prec.iloc[kper : kper + 1] + p[0] * self.evap.iloc[kper : kper + 1]
+        # ).to_numpy()
+        mf6.set_value(
+            self.parameter_adresses["recharge"], self.recharge[kper : kper + 1]
+        )
+        # rts = list(zip(range(model.nper + 1), np.append(rech, 0.0)))
+        # ts = flopy.mf6.ModflowUtlts(
+        #     rch,
+        #     time_series_namerecord=["recharge"],
+        #     interpolation_methodrecord=["stepwise"],
+        #     timeseries=rts,
+        #     filename=f"{model.name.lower()}.rch_ts",
+        # )
+        # ts.write()
 
     def stress(self) -> dict[str, Series]:
         return {"prec": self.prec, "evap": self.evap}
