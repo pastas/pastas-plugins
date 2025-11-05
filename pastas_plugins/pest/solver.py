@@ -57,12 +57,14 @@ def run_pypestworker(
     host: int,
     port: int,
     ml: Model,
+    timeout: float = 0.1,
 ) -> None:
     """Run function for PEST using the PyPestWorker (in memory)"""
     ppw = pyemu.os_utils.PyPestWorker(
         pst=pst,
         host=host,
         port=port,
+        timeout=timeout
         verbose=False,
     )
     pvals = ppw.get_parameters()
@@ -164,6 +166,9 @@ class PestSolver(BaseSolver):
         self.observations = observations
 
         # setup parameters
+        # initial_parameters = self.ml.parameters["initial"].copy()
+        # for pname, val in initial_parameters.items():
+        #     self.ml.set_parameter(pname, optimal=val)
         self.ml.parameters.loc[:, "optimal"] = self.ml.parameters.loc[:, "initial"]
         self.vary = self.ml.parameters.vary.values.astype(bool)
         parameters = self.ml.parameters[self.vary].copy()
@@ -291,6 +296,23 @@ class PestSolver(BaseSolver):
             self.setup_files(version=version)
         else:
             logger.info("Solver is already initialized.")
+
+    @staticmethod
+    def download_executable(path: Path | str, subset: list[str] | None) -> None:
+        """Download the PEST++ executable if it does not exist.
+        Parameters
+        ----------
+        path : Path
+            The directory where the executable should be located.
+        subset : str | list[str] | None
+            A list of strings to filter the executable download,
+            e.g.: ["pestpp-glm", "pestpp-ies"]. If None, no filtering
+            is applied and all available executables are downloaded.
+        Returns
+        -------
+        None
+        """
+        pyemu.utils.get_pestpp(str(path), subset=subset, force=True)
 
 
 class PestGlmSolver(PestSolver):
