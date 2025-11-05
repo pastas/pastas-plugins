@@ -3,6 +3,7 @@ from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from functools import lru_cache, partial
 from logging import getLogger
+from os import cpu_count
 from pathlib import Path
 from platform import node as get_computername
 from shutil import copy as copy_file
@@ -17,7 +18,6 @@ from numpy.typing import NDArray
 from pandas import DataFrame
 from pastas.solver import BaseSolver
 from pastas.typing import ArrayLike, Model, TimestampType
-from psutil import cpu_count
 from scipy.optimize import least_squares
 from scipy.optimize._numdiff import approx_derivative
 from scipy.stats import norm, truncnorm
