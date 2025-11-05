@@ -31,6 +31,12 @@ def simple_pastas_model():
     ml = ps.Model(observations, name="test_ml")
     rm = ps.RechargeModel(prec, evap, name="rch", rfunc=ps.Gamma())
     ml.add_stressmodel(rm)
+    ml.set_parameter(
+        "constant_d",
+        pmin=observations.min(),
+        pmax=observations.max(),
+        initial=observations.mean(),
+    )
 
     return ml
 
