@@ -3,7 +3,7 @@ import pandas as pd
 import pastas as ps
 import pytest
 from pastas.typing import ArrayLike
-from patsas_plugin.solver import RandomizedMaximumLikelihoodSolver
+from pastas_plugins.solver import RandomizedMaximumLikelihoodSolver
 
 
 @pytest.fixture
