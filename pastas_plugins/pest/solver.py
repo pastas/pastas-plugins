@@ -53,12 +53,14 @@ def run_pypestworker(
     host: int,
     port: int,
     ml: Model,
+    timeout: float = 0.1,
 ) -> None:
     """Run function for PEST using the PyPestWorker (in memory)"""
     ppw = pyemu.os_utils.PyPestWorker(
         pst=pst,
         host=host,
         port=port,
+        timeout=timeout,
         verbose=False,
     )
     pvals = ppw.get_parameters()
@@ -160,6 +162,9 @@ class PestSolver(BaseSolver):
         self.observations = observations
 
         # setup parameters
+        # initial_parameters = self.ml.parameters["initial"].copy()
+        # for pname, val in initial_parameters.items():
+        #     self.ml.set_parameter(pname, optimal=val)
         self.ml.parameters.loc[:, "optimal"] = self.ml.parameters.loc[:, "initial"]
         self.vary = self.ml.parameters.vary.values.astype(bool)
         parameters = self.ml.parameters[self.vary].copy()
@@ -288,6 +293,25 @@ class PestSolver(BaseSolver):
         else:
             logger.info("Solver is already initialized.")
 
+    @staticmethod
+    def download_executable(path: Path | str, subset: list[str] | None) -> None:
+        """Download the PEST++ executable if it does not exist.
+
+        Parameters
+        ----------
+        path : Path
+            The directory where the executable should be located.
+        subset : str | list[str] | None
+            A list of strings to filter the executable download,
+            e.g.: ["pestpp-glm", "pestpp-ies"]. If None, no filtering
+            is applied and all available executables are downloaded.
+
+        Returns
+        -------
+        None
+        """
+        pyemu.utils.get_pestpp(str(path), subset=subset, force=True)
+
 
 class PestGlmSolver(PestSolver):
     """PESTPP-GLM (Gauss-Levenberg-Marquardt) solver"""
@@ -371,7 +395,6 @@ class PestGlmSolver(PestSolver):
         stderr : NDArray[np.float64]
             The standard errors of the optimal parameters.
         """
-
         self.initialize(version=2)
 
         if self.use_pypestworker:
@@ -400,7 +423,7 @@ class PestGlmSolver(PestSolver):
         # covariance
         pcov = pd.read_csv(
             self.temp_ws / f"pest.{self.nfev}.post.cov",
-            sep="\s+",
+            sep=r"\s+",
             skiprows=[0],
             nrows=len(ipar.index),
             header=None,
@@ -518,13 +541,19 @@ class PestHpSolver(PestSolver):
             t.join()
 
         par = pd.read_csv(
-            self.temp_ws / "pest.par", index_col=0, sep="\s+", skiprows=[0], header=None
+            self.temp_ws / "pest.par",
+            index_col=0,
+            sep=r"\s+",
+            skiprows=[0],
+            header=None,
         )
         par.index = self.ml.parameters.index[self.vary]
         optimal = self.ml.parameters["initial"].copy().values
         optimal[self.vary] = par.iloc[:, 0].values
 
-        ofr = pd.read_csv(self.temp_ws / "pest.ofr", index_col=0, sep="\s+", skiprows=2)
+        ofr = pd.read_csv(
+            self.temp_ws / "pest.ofr", index_col=0, sep=r"\s+", skiprows=2
+        )
         self.nfev = ofr.index[-1]
         self.obj_func = ofr.at[self.nfev, "total"]
 
@@ -634,6 +663,7 @@ class PestIesSolver(PestSolver):
         | None = None,
         pestpp_options: dict[str, Any] | None = None,
         silent: bool = False,
+        seed: int = pyemu.en.SEED,
     ) -> None:
         """
         Run ensemble simulations using pestpp-ies.
@@ -656,6 +686,7 @@ class PestIesSolver(PestSolver):
             If None the parameter distribution is drawn by pestpp-ies itself.
         pestpp_options : dict | None, optional
             Additional PEST++ options, by default None.
+
         Returns
         -------
         None
@@ -673,6 +704,7 @@ class PestIesSolver(PestSolver):
             self.write_ensemble_observation_noise(
                 standard_deviation=observation_noise_standard_deviation,
                 correlation_coefficient=observation_noise_correlation_coefficient,
+                seed=seed,
             )
             pst.pestpp_options["ies_observation_ensemble"] = (
                 "pest_starting_obs_ensemble.csv"
@@ -682,6 +714,7 @@ class PestIesSolver(PestSolver):
                 method=ies_parameter_ensemble_method,
                 par_sigma_range=par_sigma_range,
                 ies_add_base=ies_add_base,
+                seed=seed,
             )
             pst.pestpp_options["ies_parameter_ensemble"] = (
                 "pest_starting_par_ensemble.csv"
@@ -882,6 +915,7 @@ class PestIesSolver(PestSolver):
         standard_deviation: float = 0.0,
         correlation_coefficient: float = 0.0,
         ies_add_base: bool = True,
+        seed: int = pyemu.en.SEED,
     ) -> None:
         """
         Generate and write an ensemble of observation noise to a CSV file.
@@ -907,7 +941,7 @@ class PestIesSolver(PestSolver):
             nobs=len(pst.observation_data.index),
             standard_deviation=standard_deviation,
             correlation_coefficient=correlation_coefficient,
-            seed=pyemu.en.SEED,
+            seed=seed,
         )
         obs_data = pst.observation_data.loc[:, ["obsval"]].values
         obs_noise_df = pd.DataFrame(
@@ -1052,12 +1086,12 @@ class PestIesSolver(PestSolver):
             iteration=iteration, from_file=True
         ).transpose()
         par_ies = self.parameter_ensemble(iteration=iteration)
-        jac = PestIesSolver.jacobian_emperical(obs_ies.values, par_ies.values)
+        jac = PestIesSolver.jacobian_empirical(obs_ies.values, par_ies.values)
         jac_ies = pd.DataFrame(jac, index=obs_ies.index, columns=par_ies.columns)
         return jac_ies
 
     @staticmethod
-    def jacobian_emperical(
+    def jacobian_empirical(
         simulation_ensembles: NDArray[np.float64],
         parameter_ensembles: NDArray[np.float64],
     ) -> NDArray[np.float64]:

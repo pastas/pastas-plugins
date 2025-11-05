@@ -65,3 +65,6 @@ Below you can find examples for the different plugins.
 
 .. _Test notebook for Pastas parameter sensitivity analysis with PEST++ SEN Solver: pest_pastas_sen.html
 
+`Linear Regression with PEST++ iES`_
+
+.. _Linear Regression with PEST++ iES: pest_linear_regression_ies.html
