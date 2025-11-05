@@ -64,7 +64,7 @@ def run_pypestworker(
         pst=pst,
         host=host,
         port=port,
-        timeout=timeout
+        timeout=timeout,
         verbose=False,
     )
     pvals = ppw.get_parameters()
