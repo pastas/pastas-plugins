@@ -73,7 +73,6 @@ extras = ["pytesting"]
 
 [tool.tox.env.all]
 description = "run all unit tests and obtain coverage"
-base_python = "3.10"
 extras = ["ci", "pytesting", "all"]
 commands = [["coverage", "run", "-m", "pytest", "tests"], ["coverage", "xml"]]
 
@@ -104,7 +103,6 @@ commands = [["pytest", "tests/test_rmlsolver.py"]]
 
 [tool.tox.env.ruff]
 description = "run ruff checks"
-base_python = "python3.10"
 extras = ["ruffing"]
 commands = [
         [
