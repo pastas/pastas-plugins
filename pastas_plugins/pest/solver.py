@@ -625,7 +625,7 @@ class PestIesSolver(PestSolver):
         self.noptmax = noptmax
         self.ies_num_reals = ies_num_reals
         self.num_workers = (
-            cpu_count(logical=False) if num_workers is None else num_workers
+            cpu_count() if num_workers is None else num_workers
         )
 
     def run_ensembles(
@@ -1223,7 +1223,7 @@ class PestSenSolver(PestSolver):
         self.master_ws = temp_ws if self.use_pypestworker else master_ws
         self.noptmax = noptmax
         self.num_workers = (
-            cpu_count(logical=False) if num_workers is None else num_workers
+            cpu_count() if num_workers is None else num_workers
         )
 
     def start(
@@ -1306,7 +1306,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         self.seed = seed
         self.add_base = add_base
         self.num_workers = (
-            cpu_count(logical=False) if num_workers is None else num_workers
+            cpu_count() if num_workers is None else num_workers
         )
         self.parameter_ensemble: pd.DataFrame | None = None
         self.observation_noise: pd.DataFrame | None = None
