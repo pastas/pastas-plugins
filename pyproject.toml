@@ -73,7 +73,7 @@ extras = ["pytesting"]
 
 [tool.tox.env.all]
 description = "run all unit tests and obtain coverage"
-base_python = "python3.10"
+base_python = "3.10"
 extras = ["ci", "pytesting", "all"]
 commands = [["coverage", "run", "-m", "pytest", "tests"], ["coverage", "xml"]]
 
