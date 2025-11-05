@@ -161,7 +161,7 @@ def test_jacobian_finite_difference():
 
     for method in ["2-point", "3-point"]:
         jac = RandomizedMaximumLikelihoodSolver.jacobian_finite_difference(
-            fun=fun, p=p, jacobian_method=method
+            fun=fun, p=p, jacobian_method=method, bounds=(-np.inf, np.inf)
         )
         assert jac.shape == (2, 2)
 
