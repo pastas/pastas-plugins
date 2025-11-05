@@ -40,7 +40,7 @@ documentation = "https://pastas.readthedocs.io"
 all = ["pastas_plugins[modflow,crosscorrelation,pest]"]
 crosscorrelation = ["statsmodels"]
 modflow = ["flopy"]
-pest = ["pyemu>=1.3.8"]
+pest = ["pyemu>=1.3.8", "tqdm"]
 reservoirs = ["pastas_plugins"] # placeholder for empty dependencies
 responses = ["pastas_plugins"] # placeholder for empty dependencies
 ruffing = ["ruff"]
@@ -67,56 +67,56 @@ show-fixes = true
 fix = true
 
 [tool.tox]
-legacy_tox_ini = """
-    [tox]
-    requires = tox>=4
-    env_list = py{310,311,312,313}
+env_list = ["py{310,311,312,313}"]
 
-    [testenv:all]
-    description = run all unit tests and obtain coverage
-    basepython = python3.10
-    extras = ci,pytesting,all
-    commands =
-            coverage run -m pytest tests
-            coverage xml
+[tool.tox.env_run_base]
+description = "run unit tests"
+extras = ["pytesting"]
 
-    [testenv:cross_correlation]
-    description = run all unit tests for cross_correlation plugin
-    extras = pytesting,crosscorrelation
-    commands =
-            pytest tests/test_crosscorrelation.py
+[tool.tox.env.all]
+description = "run all unit tests and obtain coverage"
+extras = ["ci", "pytesting", "all"]
+commands = [["coverage", "run", "-m", "pytest", "tests"], ["coverage", "xml"]]
 
-    [testenv:modflow]
-    description = run all unit tests for modflow plugin
-    extras = pytesting,modflow
-    commands =
-            pytest tests/test_modflow.py
+[tool.tox.env.cross_correlation]
+description = "run all unit tests for cross_correlation plugin"
+extras = ["pytesting", "crosscorrelation"]
+commands = [["pytest", "tests/test_crosscorrelation.py"]]
 
-    [testenv:responses]
-    description = run all unit tests for responses plugin
-    extras = pytesting,responses
-    commands =
-            pytest tests/test_responses.py
+[tool.tox.env.modflow]
+description = "run all unit tests for modflow plugin"
+extras = ["pytesting", "modflow"]
+commands = [["pytest", "tests/test_modflow.py"]]
 
-    [testenv:reservoirs]
-    description = run all unit tests for reservoirs plugin
-    extras = pytesting,reservoirs
-    commands =
-            pytest tests/test_reservoirs.py
+[tool.tox.env.responses]
+description = "run all unit tests for responses plugin"
+extras = ["pytesting", "responses"]
+commands = [["pytest", "tests/test_responses.py"]]
 
-    [testenv:ruff]
-    description = run ruff checks
-    basepython = python3.10
-    extras = ruffing
-    commands =
-            ruff check --extend-select I --preview
-            ruff format --check
+[tool.tox.env.reservoirs]
+description = "run all unit tests for reservoirs plugin"
+extras = ["pytesting", "reservoirs"]
+commands = [["pytest", "tests/test_reservoirs.py"]]
 
-    [testenv:ruff_fix]
-    description = run ruff locally and fix issues
-    extras = ruffing
-    commands =
-            ruff check --extend-select I --fix
-            ruff format
+[tool.tox.env.rml_solver]
+description = "run all unit tests for rml_solver plugin"
+extras = ["pytesting", "pest"]
+commands = [["pytest", "tests/test_rmlsolver.py"]]
 
-"""
+[tool.tox.env.ruff]
+description = "run ruff checks"
+extras = ["ruffing"]
+commands = [
+        [
+                "ruff",
+                "check",
+                "--extend-select",
+                "I",
+                "--preview",
+        ],
+        [
+                "ruff",
+                "format",
+                "--check",
+        ],
+]

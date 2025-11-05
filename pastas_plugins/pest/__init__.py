@@ -4,4 +4,5 @@ from pastas_plugins.pest.solver import (
     PestHpSolver,
     PestIesSolver,
     PestSenSolver,
+    RandomizedMaximumLikelihoodSolver,
 )
