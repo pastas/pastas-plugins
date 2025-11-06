@@ -396,7 +396,7 @@ class ModflowModelApi(ModflowModel):
                 break
 
             if store_head:
-                head[kper] = mf6.get_value_ptr("API/X").item()
+                head[kper] = mf6.get_value_ptr(f"{self.name.upper()}/X").item()
 
             # increment counter
             kper += 1
