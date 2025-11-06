@@ -1580,6 +1580,8 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                         for r in range(self.num_reals)
                     ]
                     simulations = pd.concat([f.result() for f in futures], axis=1)
+                    if self.add_base:
+                        simulations.columns = list(range(self.num_reals - 1)) + ["base"]
 
                 # one least squares update
                 jacobian = RandomizedMaximumLikelihoodSolver.jacobian_empirical(
