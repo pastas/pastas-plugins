@@ -1341,6 +1341,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
             "num_reals": self.num_reals,
             "jacobian_method": self.jacobian_method,
             "seed": self.seed,
+            "add_base": self.add_base,
         }
         return data
 
