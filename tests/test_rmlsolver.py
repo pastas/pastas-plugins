@@ -71,6 +71,7 @@ def test_rml_solver_repr(rml_solver: RandomizedMaximumLikelihoodSolver):
     assert "num_reals=10" in repr_str
     assert "jacobian_method=2-point" in repr_str
 
+
 @pytest.xfail("to_dict method does not work properly yet")
 def test_rml_solver_to_dict(rml_solver: RandomizedMaximumLikelihoodSolver):
     """Test conversion to dictionary."""
