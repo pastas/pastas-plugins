@@ -1,7 +1,9 @@
 import json
-import logging
 from collections.abc import Callable
-from functools import lru_cache
+from concurrent.futures import ProcessPoolExecutor
+from functools import lru_cache, partial
+from logging import getLogger
+from os import cpu_count
 from pathlib import Path
 from platform import node as get_computername
 from shutil import copy as copy_file
@@ -14,13 +16,15 @@ import pandas as pd
 import pyemu
 from numpy.typing import NDArray
 from pandas import DataFrame
-from pastas import Model
 from pastas.solver import BaseSolver
-from pastas.typing import TimestampType
-from psutil import cpu_count
+from pastas.typing import ArrayLike, Model, TimestampType
+from scipy.optimize import least_squares
+from scipy.optimize._numdiff import approx_derivative
 from scipy.stats import norm, truncnorm
+from tqdm import tqdm
+from tqdm.contrib.concurrent import process_map
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 def run() -> None:
@@ -53,12 +57,14 @@ def run_pypestworker(
     host: int,
     port: int,
     ml: Model,
+    timeout: float = 0.1,
 ) -> None:
     """Run function for PEST using the PyPestWorker (in memory)"""
     ppw = pyemu.os_utils.PyPestWorker(
         pst=pst,
         host=host,
         port=port,
+        timeout=timeout,
         verbose=False,
     )
     pvals = ppw.get_parameters()
@@ -160,6 +166,9 @@ class PestSolver(BaseSolver):
         self.observations = observations
 
         # setup parameters
+        # initial_parameters = self.ml.parameters["initial"].copy()
+        # for pname, val in initial_parameters.items():
+        #     self.ml.set_parameter(pname, optimal=val)
         self.ml.parameters.loc[:, "optimal"] = self.ml.parameters.loc[:, "initial"]
         self.vary = self.ml.parameters.vary.values.astype(bool)
         parameters = self.ml.parameters[self.vary].copy()
@@ -287,6 +296,23 @@ class PestSolver(BaseSolver):
             self.setup_files(version=version)
         else:
             logger.info("Solver is already initialized.")
+
+    @staticmethod
+    def download_executable(path: Path | str, subset: list[str] | None) -> None:
+        """Download the PEST++ executable if it does not exist.
+        Parameters
+        ----------
+        path : Path
+            The directory where the executable should be located.
+        subset : str | list[str] | None
+            A list of strings to filter the executable download,
+            e.g.: ["pestpp-glm", "pestpp-ies"]. If None, no filtering
+            is applied and all available executables are downloaded.
+        Returns
+        -------
+        None
+        """
+        pyemu.utils.get_pestpp(str(path), subset=subset, force=True)
 
 
 class PestGlmSolver(PestSolver):
@@ -620,9 +646,7 @@ class PestIesSolver(PestSolver):
         self.master_ws = temp_ws if self.use_pypestworker else master_ws
         self.noptmax = noptmax
         self.ies_num_reals = ies_num_reals
-        self.num_workers = (
-            cpu_count(logical=False) if num_workers is None else num_workers
-        )
+        self.num_workers = cpu_count() if num_workers is None else num_workers
 
     def run_ensembles(
         self,
@@ -634,6 +658,7 @@ class PestIesSolver(PestSolver):
         | None = None,
         pestpp_options: dict[str, Any] | None = None,
         silent: bool = False,
+        seed: int = pyemu.en.SEED,
     ) -> None:
         """
         Run ensemble simulations using pestpp-ies.
@@ -673,6 +698,7 @@ class PestIesSolver(PestSolver):
             self.write_ensemble_observation_noise(
                 standard_deviation=observation_noise_standard_deviation,
                 correlation_coefficient=observation_noise_correlation_coefficient,
+                seed=seed,
             )
             pst.pestpp_options["ies_observation_ensemble"] = (
                 "pest_starting_obs_ensemble.csv"
@@ -682,6 +708,7 @@ class PestIesSolver(PestSolver):
                 method=ies_parameter_ensemble_method,
                 par_sigma_range=par_sigma_range,
                 ies_add_base=ies_add_base,
+                seed=seed,
             )
             pst.pestpp_options["ies_parameter_ensemble"] = (
                 "pest_starting_par_ensemble.csv"
@@ -882,6 +909,7 @@ class PestIesSolver(PestSolver):
         standard_deviation: float = 0.0,
         correlation_coefficient: float = 0.0,
         ies_add_base: bool = True,
+        seed: int = pyemu.en.SEED,
     ) -> None:
         """
         Generate and write an ensemble of observation noise to a CSV file.
@@ -907,7 +935,7 @@ class PestIesSolver(PestSolver):
             nobs=len(pst.observation_data.index),
             standard_deviation=standard_deviation,
             correlation_coefficient=correlation_coefficient,
-            seed=pyemu.en.SEED,
+            seed=seed,
         )
         obs_data = pst.observation_data.loc[:, ["obsval"]].values
         obs_noise_df = pd.DataFrame(
@@ -1052,12 +1080,12 @@ class PestIesSolver(PestSolver):
             iteration=iteration, from_file=True
         ).transpose()
         par_ies = self.parameter_ensemble(iteration=iteration)
-        jac = PestIesSolver.jacobian_emperical(obs_ies.values, par_ies.values)
+        jac = PestIesSolver.jacobian_empirical(obs_ies.values, par_ies.values)
         jac_ies = pd.DataFrame(jac, index=obs_ies.index, columns=par_ies.columns)
         return jac_ies
 
     @staticmethod
-    def jacobian_emperical(
+    def jacobian_empirical(
         simulation_ensembles: NDArray[np.float64],
         parameter_ensembles: NDArray[np.float64],
     ) -> NDArray[np.float64]:
@@ -1218,9 +1246,7 @@ class PestSenSolver(PestSolver):
         )
         self.master_ws = temp_ws if self.use_pypestworker else master_ws
         self.noptmax = noptmax
-        self.num_workers = (
-            cpu_count(logical=False) if num_workers is None else num_workers
-        )
+        self.num_workers = cpu_count() if num_workers is None else num_workers
 
     def start(
         self, pestpp_options: dict[str, Any] | None = None, silent: bool = False
@@ -1274,3 +1300,337 @@ class PestSenSolver(PestSolver):
             "PestSenSolver does not have a solve method. Run the sensitivity"
             "analysis using the `start` method."
         )
+
+
+class RandomizedMaximumLikelihoodSolver(BaseSolver):
+    _name = "RandomizedMaximumLikelihoodSolver"
+
+    def __init__(
+        self,
+        num_reals: int,
+        jacobian_method: Literal["2-point", "3-point", "empirical"] = "3-point",
+        noptmax: int | None = None,
+        seed: int | None = pyemu.en.SEED,
+        add_base: bool = True,
+        num_workers: int | None = None,
+        pcov: pd.DataFrame | None = None,
+        nfev: int | None = None,
+        **kwargs,
+    ):
+        super().__init__(pcov=pcov, nfev=nfev, **kwargs)
+        self.num_reals = num_reals
+        self.jacobian_method = jacobian_method
+        if noptmax is None and jacobian_method == "empirical":
+            logger.error(
+                "noptmax must be specified when using 'empirical' jacobian method."
+            )
+        self.noptmax = noptmax
+        self.seed = seed
+        self.add_base = add_base
+        self.num_workers = cpu_count() if num_workers is None else num_workers
+        self.parameter_ensemble: pd.DataFrame | None = None
+        self.observation_noise: pd.DataFrame | None = None
+        self.simulation_ensemble: pd.DataFrame | None = None
+
+    def __repr__(self) -> str:
+        _repr = (
+            "RandomizedMaximumLikelihoodSolver("
+            f"num_reals={self.num_reals},"
+            f"jacobian_method={self.jacobian_method})"
+        )
+        return _repr
+
+    def to_dict(self) -> dict:
+        data = {
+            "class": self._name,
+            "num_reals": self.num_reals,
+            "jacobian_method": self.jacobian_method,
+            "noptmax": self.noptmax,
+            "seed": self.seed,
+            "add_base": self.add_base,
+        }
+
+        # TODO: Use RMLSolver attributes, now go for BaseSolver otherwise can't be stored in PastaStore
+        self.nfev = self.noptmax
+        self.obj_func = 0.0
+        data = super().to_dict()
+        return data
+
+    def initialize(
+        self,
+        standard_deviation: float = 0.0,
+        correlation_coefficient: float = 0.0,
+        par_sigma_range: float = 4.0,
+        method: Literal["norm", "truncnorm", "uniform"] = "norm",
+    ) -> None:
+        logger.debug("Initialize: RML solver")
+        logger.debug("Initialize: Creating observation noise")
+        observations = self.ml.observations()
+        observation_noise = pd.DataFrame(
+            PestIesSolver.generate_observation_noise(
+                ies_num_reals=self.num_reals,
+                nobs=len(observations),
+                standard_deviation=standard_deviation,
+                correlation_coefficient=correlation_coefficient,
+                seed=self.seed,
+            ),
+            columns=pd.Index(range(self.num_reals)),
+            index=observations.index,
+        )
+
+        logger.debug("Initialize: Creating parameter noise")
+        parameter_data = pd.DataFrame(
+            index=pd.Index(range(self.num_reals)),
+            columns=self.ml.parameters.index,
+            dtype=float,
+        )
+        for pname, pdata in self.ml.parameters.iterrows():
+            rvs = PestIesSolver.parameter_distribution(
+                ies_num_reals=self.num_reals,
+                initial=pdata.at["initial"],
+                pmin=pdata.at["pmin"],
+                pmax=pdata.at["pmax"],
+                par_sigma_range=par_sigma_range,
+                method=method,
+            )
+            parameter_data[pname] = rvs
+        parameter_data.loc[:, :] = np.random.default_rng(seed=self.seed).permuted(
+            parameter_data.values, axis=0
+        )
+        if self.add_base:
+            logger.debug("Initialize: Adding base realization")
+            base_idx = self.num_reals - 1
+            observation_noise.loc[:, base_idx] = 0.0
+            observation_noise = observation_noise.rename(columns={base_idx: "base"})
+
+            parameter_data.loc[base_idx, :] = self.ml.parameters.loc[
+                :, "initial"
+            ].values
+            parameter_data = parameter_data.rename(index={base_idx: "base"})
+
+        self.parameter_ensemble = parameter_data
+        self.observation_noise = observation_noise
+
+    @property
+    def observation_ensemble(self) -> pd.DataFrame:
+        """Generate the observation ensemble by adding noise to model observations."""
+        obs = self.ml.observations().values
+        noise = self.observation_noise.values.T
+
+        obs_df = pd.DataFrame(
+            noise + obs,
+            index=self.observation_noise.columns,
+            columns=self.ml.observations().index,
+        ).T
+        return obs_df
+
+    @staticmethod
+    def jacobian_empirical(
+        simulation_ensembles: ArrayLike, parameter_ensembles: ArrayLike
+    ) -> ArrayLike:
+        """Approximate the Jacobian matrix using ensemble perturbations."""
+        return PestIesSolver.jacobian_empirical(
+            simulation_ensembles=simulation_ensembles,
+            parameter_ensembles=parameter_ensembles,
+        )
+
+    @staticmethod
+    def jacobian_finite_difference(
+        fun: Callable[[ArrayLike], ArrayLike],
+        p: ArrayLike,
+        jacobian_method: Literal["2-point", "3-point"],
+        bounds=None,
+    ) -> ArrayLike:
+        """Compute Jacobian via finite differences."""
+        return approx_derivative(
+            fun=fun,
+            x0=p,
+            method=jacobian_method,
+            bounds=bounds,
+        )
+
+    @staticmethod
+    def _least_squares_fd(
+        real: int,
+        parameter_ensemble: pd.DataFrame,
+        observation_ensemble: pd.DataFrame,
+        ml: Model,
+        jacobian_method: Literal["2-point", "3-point"],
+        **kwargs,
+    ) -> pd.Series:
+        """Perform least squares optimization for a single realization (finite diff)."""
+        logger.debug(f"RML: Starting least squares for realization {real}")
+
+        observations = observation_ensemble.iloc[:, real]
+        p = parameter_ensemble.iloc[real]
+
+        def fun(p: ArrayLike) -> ArrayLike:
+            sim = ml.simulate(p)
+            res = observations - sim.loc[observations.index]
+            return res.values
+
+        bounds = (
+            ml.parameters.loc[p.index, "pmin"].values,
+            ml.parameters.loc[p.index, "pmax"].values,
+        )
+
+        def jac(p: ArrayLike) -> ArrayLike:
+            return RandomizedMaximumLikelihoodSolver.jacobian_finite_difference(
+                fun=fun, p=p, jacobian_method=jacobian_method, bounds=bounds
+            )
+
+        result = least_squares(fun, p, jac=jac, bounds=bounds, **kwargs)
+
+        return pd.Series(result.x, index=parameter_ensemble.columns, name=real)
+
+    @staticmethod
+    def _least_squares_em(
+        real: int,
+        simulations: pd.DataFrame,
+        parameter_ensemble: pd.DataFrame,
+        observation_ensemble: pd.DataFrame,
+        ml: Model,
+        jacobian: ArrayLike | None = None,
+    ) -> pd.Series:
+        """Perform one empirical least squares update."""
+        obs = observation_ensemble.iloc[:, real]
+        sims = simulations.loc[obs.index, :]
+        sim = sims.iloc[:, real]
+        p0 = parameter_ensemble.iloc[real]
+        bounds = (
+            ml.parameters.loc[p0.index, "pmin"].values,
+            ml.parameters.loc[p0.index, "pmax"].values,
+        )
+        if jacobian is None:
+            jacobian = RandomizedMaximumLikelihoodSolver.jacobian_empirical(
+                simulation_ensembles=sims.values,
+                parameter_ensembles=parameter_ensemble.values,
+            )
+
+        # Option 1: Gauss–Newton / Levenberg–Marquardt step
+        JTJ = jacobian.T @ jacobian
+        g = jacobian.T @ (obs - sim).values
+
+        # Solve for delta p
+        lam = 1e-8 * np.max(np.diag(JTJ))  # could adapt per-iteration
+        delta, *_ = np.linalg.lstsq(JTJ + lam * np.eye(JTJ.shape[0]), g, rcond=None)
+
+        p_new = np.clip(p0.values + delta, bounds[0], bounds[1])
+
+        # Option 2: SciPy least squares with linearized residuals
+        # def jac(_) -> ArrayLike:
+        #     return jacobian
+
+        # def fun(p) -> ArrayLike:
+        #     return (obs - sim).values + jac(None) @ (p - p0).values
+
+        # result = least_squares(fun, x0=p0.values, jac=jac, max_nfev=2, bounds=bounds)
+        # p_new = result.x
+
+        # print(f"Real {real}: {p0.values}, {p_new},  Δp = {p_new - p0.values}")
+        return pd.Series(p_new, index=parameter_ensemble.columns, name=real)
+
+    @staticmethod
+    def _simulate(real: int, parameters: pd.DataFrame, ml: Model) -> pd.Series:
+        """Run the model simulation for one realization."""
+        p = parameters.iloc[real].values
+        return ml.simulate(p=p).rename(real)
+
+    def solve(self, **kwargs) -> tuple[bool, pd.Series, None]:
+        """Solve the RML problem using least squares optimization."""
+
+        if "noise" in kwargs:
+            _ = kwargs.pop("noise")
+
+        if "weights" in kwargs:
+            _ = kwargs.pop("weights")
+
+        if self.jacobian_method in ("2-point", "3-point"):
+            func = partial(
+                RandomizedMaximumLikelihoodSolver._least_squares_fd,
+                parameter_ensemble=self.parameter_ensemble,
+                observation_ensemble=self.observation_ensemble,
+                ml=self.ml,
+                jacobian_method=self.jacobian_method,
+            )
+
+            results = process_map(
+                func,
+                range(self.num_reals),
+                max_workers=self.num_workers,
+                desc="RML looping over realizations",
+                chunksize=1,
+            )
+
+            self.parameter_ensemble = pd.DataFrame(
+                results, index=self.parameter_ensemble.index
+            )
+            with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
+                sims = [
+                    executor.submit(
+                        RandomizedMaximumLikelihoodSolver._simulate,
+                        r,
+                        self.parameter_ensemble,
+                        self.ml,
+                    )
+                    for r in range(self.num_reals)
+                ]
+                self.simulation_ensemble = pd.concat([f.result() for f in sims], axis=1)
+
+        elif self.jacobian_method == "empirical":
+            parameter_ensemble = self.parameter_ensemble.copy()
+            for _ in tqdm(range(self.noptmax), desc="RML looping over noptmax"):
+                # simulate ensembles in parallel
+                with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
+                    futures = [
+                        executor.submit(
+                            RandomizedMaximumLikelihoodSolver._simulate,
+                            r,
+                            parameter_ensemble,
+                            self.ml,
+                        )
+                        for r in range(self.num_reals)
+                    ]
+                    simulations = pd.concat([f.result() for f in futures], axis=1)
+                    if self.add_base:
+                        simulations.columns = list(range(self.num_reals - 1)) + ["base"]
+
+                # one least squares update
+                jacobian = RandomizedMaximumLikelihoodSolver.jacobian_empirical(
+                    simulation_ensembles=simulations.loc[
+                        self.observation_ensemble.index
+                    ].values,
+                    parameter_ensembles=parameter_ensemble.values,
+                )
+                with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
+                    futures = [
+                        executor.submit(
+                            RandomizedMaximumLikelihoodSolver._least_squares_em,
+                            real=r,
+                            simulations=simulations,
+                            parameter_ensemble=parameter_ensemble,
+                            observation_ensemble=self.observation_ensemble,
+                            ml=self.ml,
+                            jacobian=jacobian,
+                        )
+                        for r in range(self.num_reals)
+                    ]
+                    parameter_ensemble = pd.DataFrame(
+                        [f.result() for f in futures], index=parameter_ensemble.index
+                    )
+
+            self.simulation_ensemble = simulations
+            self.parameter_ensemble = parameter_ensemble
+
+        res = self.observation_ensemble - self.simulation_ensemble
+        self.obj_func = float(np.mean((np.sum(res.values**2, axis=0))))
+        self.nfev = self.num_reals if self.noptmax is None else self.noptmax
+
+        if self.add_base:
+            optimal = self.parameter_ensemble.loc["base"]
+        else:
+            optimal = self.parameter_ensemble.mean(axis=0)
+
+        stderr = self.parameter_ensemble.std().values
+
+        return True, optimal, stderr

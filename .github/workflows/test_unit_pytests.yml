@@ -59,6 +59,18 @@ jobs:
           - name: Test suite for cross_correlation plugin with py312-ubuntu
             python: "3.13"
             toxenv: cross_correlation
+          - name: Test suite for rml_solver plugin with py310-ubuntu
+            python: "3.10"
+            toxenv: rml_solver
+          - name: Test suite for rml_solver plugin with py311-ubuntu
+            python: "3.11"
+            toxenv: rml_solver
+          - name: Test suite for rml_solver plugin with py312-ubuntu
+            python: "3.12"
+            toxenv: rml_solver
+          - name: Test suite for rml_solver plugin with py313-ubuntu
+            python: "3.13"
+            toxenv: rml_solver
           - name: Test suite for all unit tests
             python: "3.10"
             toxenv: all
