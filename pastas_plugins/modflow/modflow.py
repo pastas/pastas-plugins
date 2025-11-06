@@ -1,3 +1,4 @@
+# %%
 import logging
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -8,9 +9,67 @@ from pandas import DataFrame, Series
 logger = logging.getLogger(__name__)
 
 
+class ModflowApi:
+    """Class to manage Modflow 6 API parameters.
+
+    Acts as a dictionary that returns full parameter address when accessed
+    with parameter name. Also provides methods to set model name, add parameters,
+    and set parameter values in a Modflow 6 model instance.
+
+    Parameters
+    ----------
+    pkg : str
+        The Modflow 6 package name (e.g., "STO", "DIS").
+
+    Usage
+    -----
+    api = ModflowApi(pkg="STO")
+    api.set_model_name("my_model")
+    api.add_parameters("SS", "SY")
+    ss_address = api["SS"]  # returns "MY_MODEL/STO/SS"
+    api.set_value(mf6, "SS", np.array([1e3]))
+
+    Note
+    ----
+    Model name must be set using `set_model_name()` in order to get correct
+    parameter addresses.
+    """
+
+    def __init__(self, pkg: str):
+        self.pkg = pkg
+        self.model_name = None
+        self.parameters = {}
+
+    def __repr__(self):
+        s = f"ModflowApi(pkg_name={self.pkg}, model_name={self.model_name})"
+        for pname in self.parameters:
+            s += f"\n  - {pname}: {self[pname]}"
+        return s
+
+    def __getitem__(self, parameter_name: str):
+        return self.parameters[parameter_name].format(
+            model_name=self.model_name, pkg_name=self.pkg
+        )
+
+    def set_model_name(self, model_name: str) -> None:
+        self.model_name = model_name.upper()
+
+    def add_parameters(self, *args) -> None:
+        for p in args:
+            assert isinstance(p, str), "Parameter names must be strings."
+            self.parameters[p] = "{model_name}/{pkg_name}/" + f"{p.upper()}"
+
+    def set_value(self, mf6, parameter_name: str, value: np.ndarray) -> None:
+        mf6.set_value(self[parameter_name], value)
+
+
+# %%
+
+
 @runtime_checkable
 class ModflowPackage(Protocol):
     _name: str
+    api: ModflowApi
 
     def get_init_parameters(self, name: str) -> DataFrame: ...
 
@@ -18,12 +77,15 @@ class ModflowPackage(Protocol):
         self, modflow_gwf: flopy.mf6.ModflowGwf, **kwargs: Any
     ) -> None: ...
 
+    def update_parameters(self, mf6, params: tuple, **kwargs: Any) -> None: ...
+
     def stress(self) -> dict[str, Series] | None: ...
 
 
 class ModflowDis:
     def __init__(self):
         self._name = "DIS"
+        self.api = ModflowApi(self._name)
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
@@ -35,7 +97,7 @@ class ModflowDis:
                 "name": [name, name],
                 "dist": ["uniform", "uniform"],
             },
-            index=[name + "_d", name + "_H"],
+            index=["constant_d", self._name + "_H"],
         )
         return parameters
 
@@ -59,6 +121,14 @@ class ModflowDis:
             pname=self._name,
         )
         dis.write()
+        # API stuff
+        self.api.set_model_name(modflow_gwf.name)
+        self.api.add_parameters("TOP", "BOT")
+
+    def update_parameters(self, mf6, params: tuple) -> None:
+        d, H = params
+        self.api.set_value(mf6, "TOP", np.array([d + H]))
+        self.api.set_value(mf6, "BOT", np.array([d - 100.0]))
 
     def stress(self) -> None:
         return None
@@ -67,6 +137,7 @@ class ModflowDis:
 class ModflowIc:
     def __init__(self):
         self._name = "IC"
+        self.api = ModflowApi(self._name)
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
@@ -78,7 +149,7 @@ class ModflowIc:
                 "name": [name],
                 "dist": ["uniform"],
             },
-            index=[name + "_d"],
+            index=["constant_d"],
         )
         return parameters
 
@@ -86,6 +157,12 @@ class ModflowIc:
         """Update the initial conditions package."""
         ic = flopy.mf6.ModflowGwfic(modflow_gwf, strt=d, pname=self._name)
         ic.write()
+        # API stuff
+        self.api.set_model_name(modflow_gwf.name)
+        self.api.add_parameters("STRT")
+
+    def update_parameters(self, mf6, params) -> None:
+        self.api.set_value(mf6, "STRT", np.array(params))
 
     def stress(self) -> None:
         return None
@@ -94,6 +171,7 @@ class ModflowIc:
 class ModflowSto:
     def __init__(self):
         self._name = "STO"
+        self.api = ModflowApi(self._name)
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
@@ -105,7 +183,7 @@ class ModflowSto:
                 "name": [name],
                 "dist": ["uniform"],
             },
-            index=[name + "_S"],
+            index=[self._name + "_S"],
         )
         return parameters
 
@@ -123,6 +201,16 @@ class ModflowSto:
             pname=self._name,
         )
         sto.write()
+        # API stuff
+        self.api.set_model_name(modflow_gwf.name)
+        self.api.add_parameters("SS")
+
+    def update_parameters(self, mf6, params) -> None:
+        (ss,) = params
+        haq = mf6.get_value(f"{self.api.model_name}/DIS/TOP") - mf6.get_value(
+            f"{self.api.model_name}/DIS/BOT"
+        )
+        self.api.set_value(mf6, "SS", ss / haq)
 
     def stress(self) -> None:
         return None
@@ -131,6 +219,7 @@ class ModflowSto:
 class ModflowGhb:
     def __init__(self):
         self._name = "GHB"
+        self.api = ModflowApi(self._name)
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
@@ -142,7 +231,7 @@ class ModflowGhb:
                 "name": [name, name],
                 "dist": ["uniform", "uniform"],
             },
-            index=[name + "_d", name + "_C"],
+            index=["constant_d", self._name + "_C"],
         )
         return parameters
 
@@ -156,6 +245,14 @@ class ModflowGhb:
             pname=self._name,
         )
         ghb.write()
+        # API stuff
+        self.api.set_model_name(modflow_gwf.name)
+        self.api.add_parameters("BHEAD", "COND")
+
+    def update_parameters(self, mf6, params) -> None:
+        d, C = params
+        self.api.set_value(mf6, "BHEAD", np.array([d]))
+        self.api.set_value(mf6, "COND", np.array([C]))
 
     def stress(self) -> None:
         return None
@@ -170,7 +267,9 @@ class ModflowRch:
         self._name = "RCH"
         self.prec = prec
         self.evap = evap
-        # index prec and evap on the correct times
+        self.recharge = None  # is recomputed
+
+        self.api = ModflowApi(self._name)
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
@@ -182,29 +281,46 @@ class ModflowRch:
                 "name": [name],
                 "dist": ["uniform"],
             },
-            index=[name + "_f"],
+            index=[self._name + "_f"],
         )
         return parameters
 
-    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, f: float) -> None:
-        rech = self.prec + f * self.evap
-        rts = list(zip(range(modflow_gwf.nper + 1), np.append(rech, 0.0)))
-        ts_dict = {
-            "filename": f"{modflow_gwf.name}.rch_ts",
-            "timeseries": rts,
-            "time_series_namerecord": ["recharge"],
-            "interpolation_methodrecord": ["stepwise"],
-        }
+    def compute_recharge(self, f: float) -> Series:
+        self.recharge = (self.prec + f * self.evap).to_numpy()
 
+    def update_package(self, modflow_gwf: flopy.mf6.ModflowGwf, f: float) -> None:
         rch = flopy.mf6.ModflowGwfrch(
             modflow_gwf,
             maxbound=1,
             stress_period_data={0: [[(0, 0, 0), "recharge"]]},
-            timeseries=ts_dict,
+            timeseries={
+                "filename": f"{modflow_gwf.name.lower()}.rch_ts",
+                "time_series_namerecord": ["recharge"],
+            },
             pname=self._name,
         )
         rch.write()
-        rch.ts.write()
+        # write time series file
+        self.write_ts(modflow_gwf, f)
+
+        # API stuff
+        self.api.set_model_name(modflow_gwf.name)
+        self.api.add_parameters("RECHARGE")
+
+    def write_ts(self, modflow_gwf: flopy.mf6.ModflowGwf, f: float) -> None:
+        self.compute_recharge(f)
+        rts = list(zip(range(modflow_gwf.nper + 1), np.append(self.recharge, 0.0)))
+        ts = flopy.mf6.ModflowUtlts(
+            modflow_gwf.rch,
+            time_series_namerecord=["recharge"],
+            interpolation_methodrecord=["stepwise"],
+            timeseries=rts,
+            filename=f"{modflow_gwf.name.lower()}.rch_ts",
+        )
+        ts.write()
+
+    def update_timeseries(self, mf6, kper) -> None:
+        self.api.set_value(mf6, "RECHARGE", self.recharge[kper : kper + 1])
 
     def stress(self) -> dict[str, Series]:
         return {"prec": self.prec, "evap": self.evap}
@@ -221,6 +337,7 @@ class ModflowUzf:
         nwavesets: int = 40,
     ):
         self._name = "UZF"
+        self.api = ModflowApi(self._name)
         self.prec = prec
         self.evap = evap
         self.simulate_et = simulate_et
@@ -264,9 +381,6 @@ class ModflowUzf:
         extdp = extdpfrac * H
         thext = thtr + (thts - thtr) * thextfrac
 
-        finf = self.prec
-        pet = self.evap  # make sure et is positive!
-
         thti = (thts + thtr) / 2  # initial water content
         # Evapotranspiration in the unsaturated zone will be simulated as a
         # function of the specified potential evapotranspiration rate while
@@ -302,18 +416,6 @@ class ModflowUzf:
             for n in range(nlay)
         ]
 
-        uzfts = [
-            (i, finfi, peti)
-            for i, finfi, peti in zip(
-                range(modflow_gwf.nper + 1), np.append(finf, 0.0), np.append(pet, 0.0)
-            )
-        ]
-        ts_dict = {
-            "filename": f"{modflow_gwf.name}.uzf_ts",
-            "timeseries": uzfts,
-            "time_series_namerecord": ["finf", "pet"],
-            "interpolation_methodrecord": ["stepwise", "stepwise"],
-        }
         perioddata = {
             0: [
                 [n, "finf", "pet", extdp, thext, ha, hroot, rootact]
@@ -352,12 +454,11 @@ class ModflowUzf:
             nuzfcells=nlay,
             packagedata=uzf_pkdat,
             perioddata=perioddata,
-            timeseries=ts_dict,
             filename=f"{modflow_gwf.name}.uzf",
             pname=self._name,
         )
         uzf.write()
-        uzf.ts.write()
+        self.write_ts(modflow_gwf)
 
         # simulate surface runoff, originally done by simulate_gwseep in uzf
         if "DRN" in modflow_gwf.get_package_list():
@@ -373,6 +474,29 @@ class ModflowUzf:
         )
         drn.write()
 
+        # API stuff
+        self.api.set_model_name(modflow_gwf.name)
+        # self.api.add_parameters()
+
+    def write_ts(self, modflow_gwf: flopy.mf6.ModflowGwf) -> None:
+        finf = self.prec
+        pet = self.evap  # make sure et is positive!
+
+        uzfts = [
+            (i, finfi, peti)
+            for i, finfi, peti in zip(
+                range(modflow_gwf.nper + 1), np.append(finf, 0.0), np.append(pet, 0.0)
+            )
+        ]
+        ts = flopy.mf6.ModflowUtlts(
+            modflow_gwf.uzf,
+            time_series_namerecord=["finf", "pet"],
+            interpolation_methodrecord=["stepwise", "stepwise"],
+            timeseries=uzfts,
+            filename=f"{modflow_gwf.name}.uzf_ts",
+        )
+        ts.write()
+
     def stress(self) -> dict[str, Series]:
         return {"prec": self.prec, "evap": self.evap}
 
@@ -380,6 +504,7 @@ class ModflowUzf:
 class ModflowDrn:
     def __init__(self):
         self._name = "DRN"
+        self.api = ModflowApi(self._name)
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
@@ -412,6 +537,17 @@ class ModflowDrn:
             pname=self._name,
         )
         drn.write()
+        # API stuff
+        self.api.set_model_name(modflow_gwf.name)
+        self.api.add_parameters("ELEV", "COND")
+
+    def update_parameters(self, mf6, params) -> None:
+        drnHfrac, drnC = params
+        top = mf6.get_value(f"{self.api.model_name}/DIS/TOP")
+        botm = mf6.get_value(f"{self.api.model_name}/DIS/BOT")
+        drnH = botm + drnHfrac * (top - botm)
+        self.api.set_value(mf6, "ELEV", np.array([drnH]))
+        self.api.set_value(mf6, "COND", np.array([drnC]))
 
     def stress(self) -> None:
         return None
@@ -420,6 +556,7 @@ class ModflowDrn:
 class ModflowSto2:
     def __init__(self):
         self._name = "STO"
+        self.api = ModflowApi(self._name)
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
@@ -456,7 +593,22 @@ class ModflowSto2:
         sto.write()
 
         # TODO: This is probably not correct, double check with old method
-        ModflowDis().update_package(modflow_gwf, d=botm, H=top + drnH)
+        ModflowDis().update_package(modflow_gwf, d=botm + 100, H=top + drnH)
+
+        # API stuff
+        self.api.set_model_name(modflow_gwf.name)
+        self.api.add_parameters("SS", "SY")
+
+    def update_parameters(self, mf6, params) -> None:
+        drnSfrac, drnS, S = params
+        top = mf6.get_value(f"{self.api.model_name}/DIS/TOP")
+        botm = mf6.get_value(f"{self.api.model_name}/DIS/BOT")
+        drnH = botm + drnSfrac * (top - botm)
+        haq = top - botm
+        self.api.set_value(mf6, "SS", drnS / haq)
+        self.api.set_value(mf6, "SY", np.array([S]))
+        # mf6.set_value(f"{self.api.model_name}/DIS/BOT", np.array([botm]))
+        mf6.set_value(f"{self.api.model_name}/DIS/TOP", np.array([top + drnH]))
 
     def stress(self) -> None:
         return None
@@ -465,6 +617,7 @@ class ModflowSto2:
 class ModflowDrnSto:
     def __init__(self):
         self._name = "DRN"
+        self.api = ModflowApi(self._name)
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
