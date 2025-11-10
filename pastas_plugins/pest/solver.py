@@ -9,7 +9,7 @@ from platform import node as get_computername
 from shutil import copy as copy_file
 from threading import Thread
 from time import sleep
-from typing import Any, Literal
+from typing import Any, Literal, TypeAlias
 
 import numpy as np
 import pandas as pd
@@ -17,7 +17,7 @@ import pyemu
 from numpy.typing import NDArray
 from pandas import DataFrame
 from pastas.solver import BaseSolver
-from pastas.typing import ArrayLike, Model, TimestampType
+from pastas.typing import ArrayLike, Model
 from scipy.optimize import least_squares
 from scipy.optimize._numdiff import approx_derivative
 from scipy.stats import norm, truncnorm
@@ -25,6 +25,8 @@ from tqdm import tqdm
 from tqdm.contrib.concurrent import process_map
 
 logger = getLogger(__name__)
+
+TimestampType: TypeAlias = pd.Timestamp | str
 
 
 def run() -> None:
