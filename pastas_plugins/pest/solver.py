@@ -1544,6 +1544,13 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         if "weights" in kwargs:
             _ = kwargs.pop("weights")
 
+        if kwargs:
+            logger.error(
+                f"Unexpected keyword arguments: {list(kwargs.keys())}, "
+                "to solve method. These kwargs will be ignored for now."
+                " See issue https://github.com/pastas/pastas/pull/1031."
+            )
+
         if self.jacobian_method in ("2-point", "3-point"):
             func = partial(
                 RandomizedMaximumLikelihoodSolver._least_squares_fd,
@@ -1562,7 +1569,9 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
             )
 
             self.parameter_ensemble = pd.DataFrame(
-                results, index=self.parameter_ensemble.index
+                results,
+                index=self.parameter_ensemble.index,
+                columns=self.parameter_ensemble.columns,
             )
             with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
                 sims = [
@@ -1620,11 +1629,11 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         self.obj_func = float(np.mean((np.sum(res.values**2, axis=0))))
         self.nfev = self.num_reals if self.noptmax is None else self.noptmax
 
-        if self.add_base:
-            optimal = self.parameter_ensemble.loc["base"]
-        else:
-            optimal = self.parameter_ensemble.mean(axis=0)
-
-        stderr = self.parameter_ensemble.std().values
+        optimal = (
+            self.parameter_ensemble.loc["base"].values
+            if self.add_base
+            else self.parameter_ensemble.mean(axis=0).values
+        )
+        stderr = self.parameter_ensemble.std(axis=0).values
 
         return True, optimal, stderr
