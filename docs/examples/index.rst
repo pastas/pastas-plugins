@@ -1,70 +1,90 @@
-.. _Examples:
-
 Examples
 ========
 
 Below you can find examples for the different plugins.
 
 .. toctree::
-    :maxdepth: 2
+    :maxdepth: 4
     :hidden:
+    :caption: Response Functions
 
     responses
+    responses_parameters
+
+.. toctree::
+    :maxdepth: 4
+    :hidden:
+    :caption: MODFLOW StressModel
+
     modflow
+    modflow_uzf
+    modflow_drn
+
+.. toctree::
+    :maxdepth: 4
+    :hidden:
+    :caption: Cross-Correlation
+
     crosscorrelation_seriesJ
+
+.. toctree::
+    :maxdepth: 4
+    :hidden:
+    :caption: PEST Solver
+
     pest_linear_regression
+    pest_linear_regression_ies
     pest_pastas_glm_hp
     pest_pastas_ies
     pest_pastas_sen
 
+.. toctree::
+    :maxdepth: 4
+    :hidden:
+    :caption: Randomized Maximum Likelihood
 
-.. rubric:: Response functions
-
-`Response function plugin for Pastas`_
-
-.. _Response function plugin for Pastas: responses.html
-
-
-.. rubric:: Modflow stressmodel
-
-`Using a Modflow model as a stressmodel in Pastas`_
-
-.. _Using a Modflow model as a stressmodel in Pastas: modflow.html
-
-`Modflow Time Series Model with the UZF package`_
-
-.. _Modflow Time Series Model with the UZF package: modflow_uzf.html
-
-`Modflow Time Series Model with the DRN package`_
-
-.. _Modflow Time Series Model with the DRN package: modflow_drn.html
+    randomized_maximum_likelihood
 
 
-.. rubric:: Cross-correlation
+Response functions
+------------------
 
-`Benchmark problem Series J`_
+:doc:`Response function plugin for Pastas <responses>`
 
-.. _Benchmark problem Series J: crosscorrelation_seriesJ.html
+:doc:`From aquifer parameters for response functions <responses_parameters>`
 
 
-.. rubric:: PEST
+Modflow StressModel
+-------------------
 
-`Linear Regression with PEST++ GLM`_
+:doc:`Using a Modflow model as a stressmodel in Pastas <modflow>`
 
-.. _Linear Regression with PEST++ GLM: pest_linear_regression.html
+:doc:`Modflow Time Series Model with the UZF package <modflow_uzf>`
 
-`Test notebook for Pastas with PEST++ GLM and PEST HP Solver`_
+:doc:`Modflow Time Series Model with the DRN package <modflow_drn>`
 
-.. _Test notebook for Pastas with PEST++ GLM and PEST HP Solver: pest_pastas_glm_hp.html
 
-`Test notebook for Pastas with PEST++ iES Solver`_
+Cross-Correlation
+-----------------
 
-.. _Test notebook for Pastas with PEST++ iES Solver: pest_pastas_ies.html
+:doc:`Benchmark problem Series J <crosscorrelation_seriesJ>`
 
-`Test notebook for Pastas parameter sensitivity analysis with PEST++ SEN Solver`_
 
-.. _Test notebook for Pastas parameter sensitivity analysis with PEST++ SEN Solver: pest_pastas_sen.html
+PEST Solver
+-----------
 
-`Linear Regression with PEST++ iES`_
+:doc:`Linear Regression with PEST++ GLM <pest_linear_regression>`
 
-.. _Linear Regression with PEST++ iES: pest_linear_regression_ies.html
+:doc:`Linear Regression with PEST++ iES <pest_linear_regression_ies>`
+
+:doc:`Test notebook for Pastas with PEST++ GLM and PEST HP Solver <pest_pastas_glm_hp>`
+
+:doc:`Test notebook for Pastas with PEST++ iES Solver <pest_pastas_ies>`
+
+:doc:`Test notebook for Pastas parameter sensitivity analysis with PEST++ SEN Solver <pest_pastas_sen>`
+
+
+Randomized Maximum Likelihood
+-----------------------------
+
+:doc:`Randomized Maximum Likelihood parameter estimation <randomized_maximum_likelihood>`
