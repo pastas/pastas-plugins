@@ -785,7 +785,11 @@ class PestIesSolver(PestSolver):
         """
         if method == "norm":
             scale = min(initial - pmin, pmax - initial) / (par_sigma_range / 2)
-            rvs = np.sort(norm(loc=initial, scale=scale).rvs(size=ies_num_reals, random_state=seed))
+            rvs = np.sort(
+                norm(loc=initial, scale=scale).rvs(
+                    size=ies_num_reals, random_state=seed
+                )
+            )
             rvs[rvs < pmin] = pmin
             rvs[rvs > pmax] = pmax
         elif method == "truncnorm":
@@ -1490,50 +1494,42 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
 
     @staticmethod
     def _least_squares_em(
-        real: int,
         simulations: pd.DataFrame,
         parameter_ensemble: pd.DataFrame,
         observation_ensemble: pd.DataFrame,
         ml: Model,
         jacobian: ArrayLike | None = None,
-    ) -> pd.Series:
-        """Perform one empirical least squares update."""
-        obs = observation_ensemble.iloc[:, real]
-        sims = simulations.loc[obs.index, :]
-        sim = sims.iloc[:, real]
-        p0 = parameter_ensemble.iloc[real]
-        bounds = (
-            ml.parameters.loc[p0.index, "pmin"].values,
-            ml.parameters.loc[p0.index, "pmax"].values,
-        )
+    ) -> pd.DataFrame:
+        """Perform empirical least squares update."""
+        sims = simulations.loc[observation_ensemble.index, :]
+
         if jacobian is None:
             jacobian = RandomizedMaximumLikelihoodSolver.jacobian_empirical(
                 simulation_ensembles=sims.values,
                 parameter_ensembles=parameter_ensemble.values,
             )
 
-        # Option 1: Gauss–Newton / Levenberg–Marquardt step
+        # Gauss–Newton / Levenberg–Marquardt step for all realizations
         JTJ = jacobian.T @ jacobian
-        g = jacobian.T @ (obs - sim).values
+        residuals = observation_ensemble.values - sims.values
+        G = jacobian.T @ residuals
 
-        # Solve for delta p
-        lam = 1e-8 * np.max(np.diag(JTJ))  # could adapt per-iteration
-        delta, *_ = np.linalg.lstsq(JTJ + lam * np.eye(JTJ.shape[0]), g, rcond=None)
+        # Solve for delta p for all reals at once
+        # lamI = 1e-7 * np.diag(np.full(JTJ.shape[0], np.max(np.diag(JTJ)))) # this is probably not the best way to set lambda
+        lamI = 1e-3 * np.diag(np.diag(JTJ))
+        H = JTJ + lamI
 
-        p_new = np.clip(p0.values + delta, bounds[0], bounds[1])
+        deltas = np.linalg.solve(H, G)
 
-        # Option 2: SciPy least squares with linearized residuals
-        # def jac(_) -> ArrayLike:
-        #     return jacobian
+        pmin = ml.parameters.loc[parameter_ensemble.columns, ["pmin"]].values
+        pmax = ml.parameters.loc[parameter_ensemble.columns, ["pmax"]].values
+        pnew = pd.DataFrame(
+            np.clip(parameter_ensemble.values.T + deltas, pmin, pmax).T,
+            index=parameter_ensemble.index,
+            columns=parameter_ensemble.columns,
+        )
 
-        # def fun(p) -> ArrayLike:
-        #     return (obs - sim).values + jac(None) @ (p - p0).values
-
-        # result = least_squares(fun, x0=p0.values, jac=jac, max_nfev=2, bounds=bounds)
-        # p_new = result.x
-
-        # print(f"Real {real}: {p0.values}, {p_new},  Δp = {p_new - p0.values}")
-        return pd.Series(p_new, index=parameter_ensemble.columns, name=real)
+        return pnew
 
     @staticmethod
     def _simulate(real: int, parameters: pd.DataFrame, ml: Model) -> pd.Series:
@@ -1596,7 +1592,9 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                         )
                         for r in range(self.num_reals)
                     ]
-                    simulations = pd.concat([f.result() for f in futures], axis=1).sort_index(axis=1)
+                    simulations = pd.concat(
+                        [f.result() for f in futures], axis=1
+                    ).sort_index(axis=1)
                     if self.add_base:
                         simulations.columns = list(range(self.num_reals - 1)) + ["base"]
 
@@ -1607,21 +1605,15 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                     ].values,
                     parameter_ensembles=parameter_ensemble.values,
                 )
-                with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
-                    futures = [
-                        executor.submit(
-                            RandomizedMaximumLikelihoodSolver._least_squares_em,
-                            real=r,
-                            simulations=simulations,
-                            parameter_ensemble=parameter_ensemble,
-                            observation_ensemble=self.observation_ensemble,
-                            ml=self.ml,
-                            jacobian=jacobian,
-                        )
-                        for r in range(self.num_reals)
-                    ]
-                    parameter_ensemble = pd.concat([f.result() for f in futures], axis=1).sort_index(axis=1).T
-                    parameter_ensemble.index = self.parameter_ensemble.index
+                parameter_ensemble = (
+                    RandomizedMaximumLikelihoodSolver._least_squares_em(
+                        simulations=simulations,
+                        parameter_ensemble=parameter_ensemble,
+                        observation_ensemble=self.observation_ensemble,
+                        ml=self.ml,
+                        jacobian=jacobian,
+                    )
+                )
 
             self.simulation_ensemble = simulations
             self.parameter_ensemble = parameter_ensemble
