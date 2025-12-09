@@ -1513,12 +1513,10 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         JTJ = jacobian.T @ jacobian
         residuals = observation_ensemble.values - sims.values
         G = jacobian.T @ residuals
-
-        # Solve for delta p for all reals at once
-        # lamI = 1e-7 * np.diag(np.full(JTJ.shape[0], np.max(np.diag(JTJ)))) # this is probably not the best way to set lambda
-        lamI = 1e-3 * np.diag(np.diag(JTJ))
+        # this is probably not the best way to set lambda
+        lamI = 1e-7 * np.diag(np.full(JTJ.shape[0], np.max(np.diag(JTJ))))
+        # lamI = 1e-3 * np.diag(np.diag(JTJ))
         H = JTJ + lamI
-
         deltas = np.linalg.solve(H, G)
 
         pmin = ml.parameters.loc[parameter_ensemble.columns, ["pmin"]].values
