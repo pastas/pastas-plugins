@@ -755,6 +755,7 @@ class PestIesSolver(PestSolver):
         pmax: float,
         par_sigma_range: float,
         method: Literal["norm", "truncnorm", "uniform"],
+        seed: int = pyemu.en.SEED,
     ) -> NDArray[np.float64]:
         """Generate a distribution of parameter values based on the specified method.
 
@@ -774,6 +775,8 @@ class PestIesSolver(PestSolver):
             Method to use for generating the distribution. 'norm' generates a
             normal distribution, 'truncnorm' generates a truncated normal
             distribution, and 'uniform' generates a uniform distribution.
+        seed : int, optional
+            Random seed for reproducibility, by default pyemu.en.SEED.
 
         Returns
         -------
@@ -782,7 +785,7 @@ class PestIesSolver(PestSolver):
         """
         if method == "norm":
             scale = min(initial - pmin, pmax - initial) / (par_sigma_range / 2)
-            rvs = np.sort(norm(loc=initial, scale=scale).rvs(size=ies_num_reals))
+            rvs = np.sort(norm(loc=initial, scale=scale).rvs(size=ies_num_reals, random_state=seed))
             rvs[rvs < pmin] = pmin
             rvs[rvs > pmax] = pmax
         elif method == "truncnorm":
@@ -801,8 +804,8 @@ class PestIesSolver(PestSolver):
             right_ies_num_reals = int(
                 np.ceil((pmax - initial) / (pmax - pmin) * ies_num_reals)
             )
-            rvs_left = tnorm_left.rvs(size=left_ies_num_reals)
-            rvs_right = tnorm_right.rvs(size=right_ies_num_reals)
+            rvs_left = tnorm_left.rvs(size=left_ies_num_reals, random_state=seed)
+            rvs_right = tnorm_right.rvs(size=right_ies_num_reals, random_state=seed)
             rvs = np.sort(np.append(rvs_left, rvs_right)[:ies_num_reals])
             rvs[rvs < pmin] = pmin
             rvs[rvs > pmax] = pmax
@@ -1593,7 +1596,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                         )
                         for r in range(self.num_reals)
                     ]
-                    simulations = pd.concat([f.result() for f in futures], axis=1)
+                    simulations = pd.concat([f.result() for f in futures], axis=1).sort_index(axis=1)
                     if self.add_base:
                         simulations.columns = list(range(self.num_reals - 1)) + ["base"]
 
@@ -1617,9 +1620,8 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                         )
                         for r in range(self.num_reals)
                     ]
-                    parameter_ensemble = pd.DataFrame(
-                        [f.result() for f in futures], index=parameter_ensemble.index
-                    )
+                    parameter_ensemble = pd.concat([f.result() for f in futures], axis=1).sort_index(axis=1).T
+                    parameter_ensemble.index = self.parameter_ensemble.index
 
             self.simulation_ensemble = simulations
             self.parameter_ensemble = parameter_ensemble
