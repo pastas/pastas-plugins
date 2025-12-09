@@ -9,6 +9,7 @@ Below you can find examples for the different plugins.
     :caption: Response Functions
 
     responses
+    responses_parameters
 
 .. toctree::
     :maxdepth: 4
@@ -44,9 +45,13 @@ Below you can find examples for the different plugins.
 
     randomized_maximum_likelihood
 
+
 Response functions
 ------------------
+
 :doc:`Response function plugin for Pastas <responses>`
+
+:doc:`From aquifer parameters for response functions <responses_parameters>`
 
 
 Modflow StressModel
@@ -61,6 +66,7 @@ Modflow StressModel
 
 Cross-Correlation
 -----------------
+
 :doc:`Benchmark problem Series J <crosscorrelation_seriesJ>`
 
 
@@ -80,4 +86,5 @@ PEST Solver
 
 Randomized Maximum Likelihood
 -----------------------------
+
 :doc:`Randomized Maximum Likelihood parameter estimation <randomized_maximum_likelihood>`
