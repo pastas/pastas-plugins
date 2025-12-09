@@ -72,7 +72,7 @@ def hantush_parameters(
     D : float
         The saturated thickness of the aquifer [L].
     c : float
-        The leakage factor [T].
+        The aquitard resistance [T].
     r : float
         The distance from the well [L].
     Q : float
