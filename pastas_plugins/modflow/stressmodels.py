@@ -1,12 +1,18 @@
+from functools import lru_cache as lru_cache
+from inspect import signature
 from logging import getLogger
-from typing import Optional, Tuple, Union
+from pathlib import Path
+from typing import Any
 
-from pandas import Series
+import flopy
+import numpy as np
+from pandas import Series, Timestamp, concat, date_range
+from pastas.model import Model
 from pastas.stressmodels import StressModelBase
 from pastas.timeseries import TimeSeries
-from pastas.typing import ArrayLike, TimestampType
+from pastas.typing import ArrayLike
 
-from .modflow import Modflow
+from .modflow import ModflowDis, ModflowIc, ModflowPackage, ModflowSto
 
 logger = getLogger(__name__)
 
@@ -16,90 +22,230 @@ class ModflowModel(StressModelBase):
 
     def __init__(
         self,
-        prec: Series,
-        evap: Series,
-        modflow: Modflow,
-        name: str,
-        settings: Optional[Tuple[Union[str, dict], Union[str, dict]]] = (
-            "prec",
-            "evap",
-        ),
-        metadata: Optional[Tuple[dict, dict]] = (None, None),
+        model: Model,
+        exe_name: str | Path,
+        sim_ws: str | Path,
+        tmin: Timestamp | None = None,
+        tmax: Timestamp | None = None,
+        silent: bool = True,
+        raise_on_modflow_error: bool = False,
+        solver_kwargs: dict[str, Any] | None = None,
     ) -> None:
-        # Set resevoir object
-        self.modflow = modflow
-
-        # Code below is copied from StressModel2 and may not be optimal
-        # Check the series, then determine tmin and tmax
-        self.prec = TimeSeries(prec, settings=settings[0], metadata=metadata[0])
-        self.evap = TimeSeries(evap, settings=settings[1], metadata=metadata[1])
-
-        # Select indices from validated stress where both series are available.
-        index = self.prec.series.index.intersection(self.evap.series.index)
-        if index.empty:
-            msg = (
-                "The stresses that were provided have no overlapping time indices. "
-                "Please make sure the indices of the time series overlap."
+        if tmin is None:
+            if model.settings["tmax"] is None:
+                tmin = model.oseries.settings["tmin"] - model.settings["warmup"]
+            else:
+                tmin = model.settings["tmin"] - model.settings["warmup"]
+        if tmax is None:
+            tmax = (
+                model.settings["tmax"]
+                if model.settings["tmax"] is not None
+                else model.oseries.settings["tmax"]
             )
-            logger.error(msg)
-            raise Exception(msg)
+        StressModelBase.__init__(
+            self,
+            name="mfsm",
+            tmin=tmin,
+            tmax=tmax,
+            rfunc=None,
+        )
+        self.model = model
+        if "constant_d" in model.parameters.index:
+            model.del_constant()
+            logger.info(
+                "Make sure to delete the model parameter constant_d "
+                "(`model.del_constant('constant_d')`). Base elevation is now controlled by "
+                "parameter `_d`."
+            )
+        self.exe_name = exe_name
+        self.sim_ws = sim_ws
+        self.raise_on_modflow_error = raise_on_modflow_error
+        self.solver_kwargs = (
+            dict(
+                complexity="SIMPLE",
+                outer_dvclose=1e-2,
+                inner_dvclose=1e-2,
+                rcloserecord=1e-1,
+                linear_acceleration="BICGSTAB",
+            )
+            if solver_kwargs is None
+            else solver_kwargs
+        )
+        self.silent = silent
+        self._packages: dict[str, ModflowPackage] = {
+            "DIS": ModflowDis(),
+            "IC": ModflowIc(),
+            "STO": ModflowSto(),
+        }
+        self._simulation, self._gwf = self.setup_modflow_simulation()
+        self.model.add_stressmodel(self)  # add as stressmodel to pastas model
 
-        StressModelBase.__init__(self, name=name, tmin=index.min(), tmax=index.max())
+    @property
+    def nper(self) -> int:
+        """Number of stress periods."""
+        return len(date_range(self.tmin, self.tmax, freq=self.model.settings["freq"]))
 
-        self.stress = [self.prec, self.evap]
+    @property
+    def nparam(self) -> int:
+        """Number of parameters."""
+        return len(self.parameters)
 
-        self.freq = self.prec.settings["freq"]
+    def add_modflow_package(
+        self, package: ModflowPackage | list[ModflowPackage]
+    ) -> None:
+        """Add a Modflow package to the model."""
+        if isinstance(package, ModflowPackage):
+            package = [package]
+
+        for pack in package:
+            if pack._name in self._packages:
+                logger.warning(f"Package {pack._name} already exists. Overwriting it.")
+            self._packages[pack._name] = pack
+            pack_stress = pack.stress()
+            if pack_stress is not None:
+                # make sure the stresses are in the right time range
+                for stress_name, stress_series in pack_stress.items():
+                    ts = TimeSeries(stress_series, settings=stress_name)
+                    ts.update_series(
+                        tmin=self.tmin, tmax=self.tmax, freq=self.model.settings["freq"]
+                    )
+                    setattr(pack, stress_name, ts.series)
+
         self.set_init_parameters()
+        self.model.add_stressmodel(self, replace=True)  # add as stressmodel to pastas model
+
+    @property
+    def package_parameter_names(self) -> dict[str, list[str]]:
+        """Get the parameter names of the packages."""
+        sigdict = {
+            name: [
+                x
+                for x in signature(package.update_package).parameters
+                if x != "modflow_gwf"
+            ]
+            for name, package in self._packages.items()
+        }
+        return sigdict
 
     def set_init_parameters(self) -> None:
         """Set the initial parameters back to their default values."""
-        self.parameters = self.modflow.get_init_parameters(self.name)
+        pdf = concat(
+            [p.get_init_parameters(self.name) for p in self._packages.values()], axis=0
+        )
+        if f"{self.name}_d" in pdf.index:
+            pdf.loc[f"{self.name}_d", ["initial", "pmin", "pmax"]] = (
+                self.model.oseries.series.mean(),
+                self.model.oseries.series.min() - self.model.oseries.series.std(),
+                self.model.oseries.series.max() + self.model.oseries.series.std(),
+            )
+        if pdf.index.duplicated(keep="first").any():
+            pdf = pdf[~pdf.index.duplicated(keep="first")]
+        self.parameters = pdf
 
-    def to_dict(self, series: bool = True) -> dict:
+    def to_dict(self) -> dict:
         raise NotImplementedError()
 
-    def get_stress(
-        self,
-        p: Optional[ArrayLike] = None,
-        tmin: Optional[TimestampType] = None,
-        tmax: Optional[TimestampType] = None,
-        freq: Optional[str] = None,
-        istress: int = 0,
-        **kwargs,
-    ) -> Tuple[Series, Series]:
-        if tmin is None:
-            tmin = self.tmin
-        if tmax is None:
-            tmax = self.tmax
-
-        self.update_stress(tmin=tmin, tmax=tmax, freq=freq)
-
-        return self.stress[0].series, self.stress[1].series
-
-    def simulate(
-        self,
-        p: ArrayLike,
-        tmin: Optional[TimestampType] = None,
-        tmax: Optional[TimestampType] = None,
-        freq: Optional[str] = None,
-        dt: float = 1.0,
-    ):
-        stress = self.get_stress(tmin=tmin, tmax=tmax, freq=freq)
-        h = self.modflow.simulate(
-            p=p,
-            stress=stress,
-        )
+    def simulate(self, p: ArrayLike, *args: Any) -> Series:
+        """Run the MODFLOW simulation and return the head time series."""
+        h = self.get_head(p=p)
         return Series(
             data=h,
-            index=stress[0].index,
-            name=self.name,
+            index=date_range(
+                start=self.tmin,
+                end=self.tmax,
+                freq=self.model.settings["freq"],
+            ),
         )
 
-    def _get_block(self, p, dt, tmin, tmax):
-        """Internal method to get the block-response function.
-        Cannot be used (yet?) since there is no block response
-        """
-        # prec = np.zeros(len())
-        # evap = np.zeros()
-        # return modflow.simulate(np.mean(prec))
-        pass
+    # @lru_cache(maxsize=None)
+    def get_head(self, p: ArrayLike) -> np.ndarray:
+        """Run the MODFLOW simulation and return the head values."""
+        self.update_model(p=p)
+        success, _ = self._simulation.run_simulation(silent=self.silent)
+
+        if success:
+            return self._gwf.output.head().get_ts((0, 0, 0))[:, 1]
+        else:
+            logger.error("ModflowError: model run failed with parameters: %s" % str(p))
+            if self.raise_on_modflow_error:
+                raise Exception(
+                    "Modflow run failed. Check the LIST file for more information."
+                )
+            else:
+                return np.zeros(self.nper)
+
+    def update_model(self, p: ArrayLike) -> None:
+        """Update the model with the given parameters."""
+        p_series = Series(p, index=self.parameters.index)
+        for name, package in self._packages.items():
+            self._remove_changing_package(package_name=name)
+            pnames = [f"{self.name}_{x}" for x in self.package_parameter_names[name]]
+            p_dict = {k.rsplit("_", 1)[-1]: v for k, v in p_series.loc[pnames].items()}
+            package.update_package(modflow_gwf=self._gwf, **p_dict)
+        self._gwf.name_file.write()
+
+    def setup_modflow_simulation(
+        self,
+    ) -> tuple[flopy.mf6.MFSimulation, flopy.mf6.ModflowGwf]:
+        """Set up the MODFLOW simulation."""
+        sim = flopy.mf6.MFSimulation(
+            sim_name=self.name,
+            version="mf6",
+            exe_name=self.exe_name,
+            sim_ws=self.sim_ws,
+            lazy_io=True,
+        )
+
+        _ = flopy.mf6.ModflowTdis(
+            sim,
+            time_units="DAYS",
+            nper=self.nper,
+            perioddata=[(1, 1, 1) for _ in range(self.nper)],
+        )
+
+        gwf = flopy.mf6.ModflowGwf(
+            sim,
+            modelname=self.name,
+            newtonoptions=["NEWTON"],
+        )
+
+        _ = flopy.mf6.ModflowIms(
+            sim,
+            **self.solver_kwargs,
+        )
+
+        _ = flopy.mf6.ModflowGwfnpf(gwf, save_flows=False, icelltype=0, pname="npf")
+
+        _ = flopy.mf6.ModflowGwfoc(
+            gwf,
+            head_filerecord=f"{gwf.name}.hds",
+            saverecord=[("HEAD", "ALL")],
+        )
+
+        sim.write_simulation(silent=self.silent)
+        return sim, gwf
+
+    def _remove_changing_package(self, package_name: str):
+        """Remove a package from the model if it exists."""
+        if package_name in self._gwf.get_package_list():
+            self._gwf.remove_package(package_name)
+
+
+solver_kwargs_uzf = dict(
+    print_option="summary",
+    outer_dvclose=3e-2,
+    outer_maximum=300,
+    under_relaxation="dbd",
+    linear_acceleration="BICGSTAB",
+    under_relaxation_theta=0.7,
+    under_relaxation_kappa=0.08,
+    under_relaxation_gamma=0.05,
+    under_relaxation_momentum=0.0,
+    inner_dvclose=3e-2,
+    rcloserecord="1000.0 strict",
+    inner_maximum=500,
+    relaxation_factor=0.97,
+    number_orthogonalizations=2,
+    preconditioner_levels=8,
+    preconditioner_drop_tolerance=0.001,
+)
