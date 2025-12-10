@@ -1350,19 +1350,16 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         return _repr
 
     def to_dict(self) -> dict:
-        data = {
+        data = super().to_dict()
+        data.update({
             "class": self._name,
             "num_reals": self.num_reals,
             "jacobian_method": self.jacobian_method,
             "noptmax": self.noptmax,
             "seed": self.seed,
             "add_base": self.add_base,
-        }
+        })
 
-        # TODO: Use RMLSolver attributes, now go for BaseSolver otherwise can't be stored in PastaStore
-        self.nfev = self.noptmax
-        self.obj_func = 0.0
-        data = super().to_dict()
         return data
 
     def initialize(
