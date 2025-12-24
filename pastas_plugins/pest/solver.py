@@ -87,6 +87,30 @@ def run_pypestworker(
             break
 
 
+def run_runstor() -> None:
+    """Run function for PEST using the RunStor (in binary .rns file)"""
+    from pathlib import Path
+
+    from pastas.io.base import load as load_model
+    from pyemu.utils.helpers import RunStor
+
+    path = Path(__file__).parent
+    fname = path / "pest.rns"
+    _, par_names, obs_names = RunStor.file_info(filename=fname)
+    rs = RunStor(filename=fname)
+    df = rs.get_data()
+    pvals = df.loc[:, par_names].to_dict()
+    ml = load_model(path / "model.pas")
+    for pname, val in pvals.items():
+        pname = pname.split(":")[-1] if ":" in pname else pname
+        pname = pname.replace("_g", "_A") if pname.endswith("_g") else pname
+        ml.set_parameter(pname, optimal=val)
+    sim = ml.simulate()
+    obsvals = sim.loc[ml.observations().index]
+    df.loc[:, obs_names] = obsvals.values
+    rs.update(df)
+
+
 class PestSolver(BaseSolver):
     """PEST solver base class"""
 
@@ -102,6 +126,7 @@ class PestSolver(BaseSolver):
         long_names: bool = True,
         port_number: int = 4004,
         use_pypestworker: bool = True,
+        use_runstor: bool = False,
         **kwargs,
     ) -> None:
         """Initialize the PEST solver.
@@ -154,7 +179,10 @@ class PestSolver(BaseSolver):
         self.control_data: dict[str, Any] = control_data
         self.port_number = port_number
         self.use_pypestworker: bool = use_pypestworker
-        self.run_function: Callable = run
+        self.use_runstor: bool = use_runstor
+        if self.use_pypestworker and self.use_runstor:
+            raise ValueError("use_pypestworker and use_runstor cannot both be True")
+        self.run_function: Callable = run_runstor if self.use_runstor else run
         self.ppw_function: Callable = run_pypestworker
 
     def setup_model(self):
@@ -247,8 +275,9 @@ class PestSolver(BaseSolver):
         )
 
         # python scripts to run
-        self.pf.add_py_function(self.run_function, "run()", is_pre_cmd=None)
-        self.pf.mod_py_cmds.append("run()")
+        run_command = "run_runstor()" if self.use_runstor else "run()"
+        self.pf.add_py_function(self.run_function, run_command, is_pre_cmd=None)
+        self.pf.mod_py_cmds.append(run_command)
 
         # create control file
         pst = self.pf.build_pst(self.pf.new_d / "pest.pst", version=version)
@@ -331,6 +360,7 @@ class PestGlmSolver(PestSolver):
         nfev: int | None = None,
         port_number: int = 4004,
         use_pypestworker: bool = True,
+        use_runstor: bool = False,
         **kwargs,
     ) -> None:
         """
@@ -374,6 +404,7 @@ class PestGlmSolver(PestSolver):
             nfev=nfev,
             port_number=port_number,
             use_pypestworker=use_pypestworker,
+            use_runstor=use_runstor,
             long_names=True,
             **kwargs,
         )
@@ -416,7 +447,7 @@ class PestGlmSolver(PestSolver):
                 ppw_kwargs={"ml": self.ml},
             )
         else:
-            self.run()
+            self.run(arg_str=" /e" if self.use_runstor else "")
 
         # optimal parameters
         ipar = pd.read_csv(self.temp_ws / "pest.ipar", index_col=0).transpose()
