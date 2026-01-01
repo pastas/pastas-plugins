@@ -18,7 +18,7 @@ from numpy.typing import NDArray
 from pandas import DataFrame
 from pastas.solver import BaseSolver
 from pastas.typing import ArrayLike, Model
-from scipy.optimize import least_squares
+from scipy.optimize import minimize
 from scipy.optimize._numdiff import approx_derivative
 from scipy.stats import norm, truncnorm
 from tqdm import tqdm
@@ -1322,6 +1322,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         seed: int | None = pyemu.en.SEED,
         add_base: bool = True,
         num_workers: int | None = None,
+        tol: float = 1e-8,
         pcov: pd.DataFrame | None = None,
         nfev: int | None = None,
         **kwargs,
@@ -1337,6 +1338,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         self.seed = seed
         self.add_base = add_base
         self.num_workers = cpu_count() if num_workers is None else num_workers
+        self.tol = tol
         self.parameter_ensemble: pd.DataFrame | None = None
         self.observation_noise: pd.DataFrame | None = None
         self.simulation_ensemble: pd.DataFrame | None = None
@@ -1351,14 +1353,19 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
 
     def to_dict(self) -> dict:
         data = super().to_dict()
-        data.update({
-            "class": self._name,
-            "num_reals": self.num_reals,
-            "jacobian_method": self.jacobian_method,
-            "noptmax": self.noptmax,
-            "seed": self.seed,
-            "add_base": self.add_base,
-        })
+        data.update(
+            {
+                "class": self._name,
+                "num_reals": self.num_reals,
+                "jacobian_method": self.jacobian_method,
+                "beta": self.beta,
+                "noptmax": self.noptmax,
+                "seed": self.seed,
+                "add_base": self.add_base,
+                # "num_workers": self.num_workers,
+                "tol": self.tol,
+            }
+        )
 
         return data
 
@@ -1462,6 +1469,8 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         observation_ensemble: pd.DataFrame,
         ml: Model,
         jacobian_method: Literal["2-point", "3-point"],
+        beta: float,
+        tol: float,
         **kwargs,
     ) -> pd.Series:
         """Perform least squares optimization for a single realization (finite diff)."""
@@ -1482,10 +1491,26 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
 
         def jac(p: ArrayLike) -> ArrayLike:
             return RandomizedMaximumLikelihoodSolver.jacobian_finite_difference(
-                fun=fun, p=p, jacobian_method=jacobian_method, bounds=bounds
+                fun=obj_func, p=p, jacobian_method=jacobian_method, bounds=bounds
             )
 
-        result = least_squares(fun, p, jac=jac, bounds=bounds, **kwargs)
+        obj_func_partial = partial(
+            obj_func,
+            real=real,
+            parameter_ensemble=parameter_ensemble,
+            parameter_ensemble_prior=parameter_ensemble_prior,
+            observation_ensemble=observation_ensemble,
+            ml=ml,
+            beta=beta,
+        )
+        result = minimize(
+            obj_func_partial,
+            parameter_ensemble.iloc[real],
+            jac=jac,
+            bounds=bounds,
+            tol=tol,
+            **kwargs,
+        )
 
         return pd.Series(result.x, index=parameter_ensemble.columns, name=real)
 
@@ -1508,8 +1533,8 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
 
         # Gauss–Newton / Levenberg–Marquardt step for all realizations
         JTJ = jacobian.T @ jacobian
-        residuals = observation_ensemble.values - sims.values
-        G = jacobian.T @ residuals
+        res = observation_ensemble.values - sims.values
+        G = jacobian.T @ res
         # this is probably not the best way to set lambda
         lamI = 1e-7 * np.diag(np.full(JTJ.shape[0], np.max(np.diag(JTJ))))
         # lamI = 1e-3 * np.diag(np.diag(JTJ))
@@ -1527,9 +1552,9 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         return pnew
 
     @staticmethod
-    def _simulate(real: int, parameters: pd.DataFrame, ml: Model) -> pd.Series:
+    def _simulate(real: int, parameter_ensemble: pd.DataFrame, ml: Model) -> pd.Series:
         """Run the model simulation for one realization."""
-        p = parameters.iloc[real].values
+        p = parameter_ensemble.iloc[real].values
         return ml.simulate(p=p).rename(real)
 
     def solve(self, **kwargs) -> tuple[bool, pd.Series, None]:
@@ -1552,9 +1577,12 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
             func = partial(
                 RandomizedMaximumLikelihoodSolver._least_squares_fd,
                 parameter_ensemble=self.parameter_ensemble,
+                parameter_ensemble_prior=self.parameter_ensemble_prior,
                 observation_ensemble=self.observation_ensemble,
                 ml=self.ml,
                 jacobian_method=self.jacobian_method,
+                beta=self.beta,
+                tol=self.tol,
             )
 
             results = process_map(
