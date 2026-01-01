@@ -1646,6 +1646,14 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                         jacobian=jacobian,
                     )
                 )
+                if np.allclose(
+                    parameter_ensemble_new.values,
+                    parameter_ensemble.values,
+                    atol=self.tol,
+                ):
+                    logger.info("RML: Convergence reached based on tol criterion.")
+                    break
+                parameter_ensemble = parameter_ensemble_new
 
             self.simulation_ensemble = simulations
             self.parameter_ensemble = parameter_ensemble
