@@ -1318,6 +1318,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         self,
         num_reals: int,
         jacobian_method: Literal["2-point", "3-point", "empirical"] = "3-point",
+        beta: float = 0.5,
         noptmax: int | None = None,
         seed: int | None = pyemu.en.SEED,
         add_base: bool = True,
@@ -1330,6 +1331,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         super().__init__(pcov=pcov, nfev=nfev, **kwargs)
         self.num_reals = num_reals
         self.jacobian_method = jacobian_method
+        self.beta = beta
         if noptmax is None and jacobian_method == "empirical":
             logger.error(
                 "noptmax must be specified when using 'empirical' jacobian method."
@@ -1422,6 +1424,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
             parameter_data = parameter_data.rename(index={base_idx: "base"})
 
         self.parameter_ensemble = parameter_data
+        self.parameter_ensemble_prior = parameter_data.copy()
         self.observation_noise = observation_noise
 
     @property
@@ -1466,6 +1469,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
     def _least_squares_fd(
         real: int,
         parameter_ensemble: pd.DataFrame,
+        parameter_ensemble_prior: pd.DataFrame,
         observation_ensemble: pd.DataFrame,
         ml: Model,
         jacobian_method: Literal["2-point", "3-point"],
@@ -1476,17 +1480,37 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         """Perform least squares optimization for a single realization (finite diff)."""
         logger.debug(f"RML: Starting least squares for realization {real}")
 
-        observations = observation_ensemble.iloc[:, real]
-        p = parameter_ensemble.iloc[real]
-
-        def fun(p: ArrayLike) -> ArrayLike:
-            sim = ml.simulate(p)
-            res = observations - sim.loc[observations.index]
-            return res.values
+        def obj_func(
+            real: int,
+            parameter_ensemble: pd.DataFrame,
+            parameter_ensemble_prior: pd.DataFrame,
+            observation_ensemble: pd.DataFrame,
+            ml: Model,
+            beta: float,
+        ) -> float:
+            sim = RandomizedMaximumLikelihoodSolver._simulate(
+                real=real, parameter_ensemble=parameter_ensemble, ml=ml
+            )
+            residual_term = np.sum(
+                np.pow(
+                    observation_ensemble.iloc[:, real].values
+                    - sim.loc[observation_ensemble.index].values,
+                    2,
+                )
+            )
+            prior_penalty_term = np.sum(
+                np.pow(
+                    parameter_ensemble.iloc[real]
+                    - parameter_ensemble_prior.iloc[real].values,
+                    2,
+                )
+            )
+            res = beta * prior_penalty_term + (1 - beta) * residual_term
+            return res
 
         bounds = (
-            ml.parameters.loc[p.index, "pmin"].values,
-            ml.parameters.loc[p.index, "pmax"].values,
+            ml.parameters.loc[parameter_ensemble.columns, "pmin"].values,
+            ml.parameters.loc[parameter_ensemble.columns, "pmax"].values,
         )
 
         def jac(p: ArrayLike) -> ArrayLike:
@@ -1637,7 +1661,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                     ].values,
                     parameter_ensembles=parameter_ensemble.values,
                 )
-                parameter_ensemble = (
+                parameter_ensemble_new = (
                     RandomizedMaximumLikelihoodSolver._least_squares_em(
                         simulations=simulations,
                         parameter_ensemble=parameter_ensemble,
