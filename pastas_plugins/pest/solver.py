@@ -1319,6 +1319,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         num_reals: int,
         jacobian_method: Literal["2-point", "3-point", "empirical"] = "3-point",
         beta: float = 0.5,
+        minimize_method: Literal["L-BFGS-B", "TNC", "SLSQP", "trust-constr"] = "SLSQP",
         noptmax: int | None = None,
         seed: int | None = pyemu.en.SEED,
         add_base: bool = True,
@@ -1332,6 +1333,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         self.num_reals = num_reals
         self.jacobian_method = jacobian_method
         self.beta = beta
+        self.minimize_method = minimize_method
         if noptmax is None and jacobian_method == "empirical":
             logger.error(
                 "noptmax must be specified when using 'empirical' jacobian method."
@@ -1409,8 +1411,12 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                 method=method,
             )
             parameter_data[pname] = rvs
-        parameter_data.loc[:, :] = np.random.default_rng(seed=self.seed).permuted(
-            parameter_data.values, axis=0
+        parameter_data.loc[:, :] = np.clip(
+            np.random.default_rng(seed=self.seed).permuted(
+                parameter_data.values, axis=0
+            ),
+            self.ml.parameters.loc[:, "pmin"].values,
+            self.ml.parameters.loc[:, "pmax"].values,
         )
         if self.add_base:
             logger.debug("Initialize: Adding base realization")
@@ -1474,69 +1480,66 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         ml: Model,
         jacobian_method: Literal["2-point", "3-point"],
         beta: float,
+        minimize_method: Literal["L-BFGS-B", "TNC", "SLSQP", "trust-constr"],
         tol: float,
         **kwargs,
     ) -> pd.Series:
         """Perform least squares optimization for a single realization (finite diff)."""
         logger.debug(f"RML: Starting least squares for realization {real}")
 
-        def obj_func(
-            real: int,
-            parameter_ensemble: pd.DataFrame,
-            parameter_ensemble_prior: pd.DataFrame,
-            observation_ensemble: pd.DataFrame,
-            ml: Model,
-            beta: float,
-        ) -> float:
-            sim = RandomizedMaximumLikelihoodSolver._simulate(
-                real=real, parameter_ensemble=parameter_ensemble, ml=ml
-            )
-            residual_term = np.sum(
-                np.pow(
-                    observation_ensemble.iloc[:, real].values
-                    - sim.loc[observation_ensemble.index].values,
-                    2,
-                )
-            )
-            prior_penalty_term = np.sum(
-                np.pow(
-                    parameter_ensemble.iloc[real]
-                    - parameter_ensemble_prior.iloc[real].values,
-                    2,
-                )
-            )
-            res = beta * prior_penalty_term + (1 - beta) * residual_term
-            return res
+        param_cols = parameter_ensemble.columns
+        p0 = parameter_ensemble.iloc[real].values
+        p_prior = parameter_ensemble_prior.iloc[real].values
+        # n_obs = observation_ensemble.shape[0]
+        n_par = len(param_cols)
 
-        bounds = (
-            ml.parameters.loc[parameter_ensemble.columns, "pmin"].values,
-            ml.parameters.loc[parameter_ensemble.columns, "pmax"].values,
-        )
+        bounds = ml.parameters.loc[param_cols, ["pmin", "pmax"]].values
+
+        def residuals(p: ArrayLike) -> np.ndarray:
+            sim = ml.simulate(p=p).rename(real)
+            r_obs = (
+                observation_ensemble.iloc[:, real].values
+                - sim.loc[observation_ensemble.index].values
+            )
+            r_prior = p - p_prior
+
+            return np.concatenate([r_prior, r_obs])
+
+        def obj_func(p: ArrayLike) -> float:
+            r = residuals(p)
+            r_prior = r[:n_par]
+            r_obs = r[n_par:]
+
+            return beta * np.sum(np.pow(r_prior, 2)) + (1 - beta) * np.sum(
+                np.pow(r_obs, 2)
+            )
 
         def jac(p: ArrayLike) -> ArrayLike:
-            return RandomizedMaximumLikelihoodSolver.jacobian_finite_difference(
-                fun=obj_func, p=p, jacobian_method=jacobian_method, bounds=bounds
-            )
+            r = residuals(p)
 
-        obj_func_partial = partial(
-            obj_func,
-            real=real,
-            parameter_ensemble=parameter_ensemble,
-            parameter_ensemble_prior=parameter_ensemble_prior,
-            observation_ensemble=observation_ensemble,
-            ml=ml,
-            beta=beta,
-        )
+            jacobian = RandomizedMaximumLikelihoodSolver.jacobian_finite_difference(
+                fun=residuals,
+                p=p,
+                jacobian_method=jacobian_method,
+                bounds=bounds.T,
+            )  # shape: (n_obs + n_par, n_par)
+
+            jacobian[:n_par, :] *= beta
+            jacobian[n_par:, :] *= 1 - beta
+            jacobian_p = jacobian.T @ r
+            return jacobian_p
+
         result = minimize(
-            obj_func_partial,
-            parameter_ensemble.iloc[real],
+            obj_func,
+            p0,
+            method=minimize_method,
             jac=jac,
             bounds=bounds,
             tol=tol,
             **kwargs,
         )
 
-        return pd.Series(result.x, index=parameter_ensemble.columns, name=real)
+        return pd.Series(result.x, index=param_cols, name=real)
 
     @staticmethod
     def _least_squares_em(
@@ -1606,6 +1609,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                 ml=self.ml,
                 jacobian_method=self.jacobian_method,
                 beta=self.beta,
+                minimize_method=self.minimize_method,
                 tol=self.tol,
             )
 
@@ -1636,7 +1640,8 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
 
         elif self.jacobian_method == "empirical":
             parameter_ensemble = self.parameter_ensemble.copy()
-            for _ in tqdm(range(self.noptmax), desc="RML looping over noptmax"):
+            obj_funcs = np.full(self.num_reals, np.inf, dtype=float)
+            for i in tqdm(range(self.noptmax), desc="RML looping over noptmax"):
                 # simulate ensembles in parallel
                 with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
                     futures = [
@@ -1654,6 +1659,19 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                     if self.add_base:
                         simulations.columns = list(range(self.num_reals - 1)) + ["base"]
 
+                # check if converged based on objective function
+                obj_funcs_new = np.sqrt(
+                    np.mean(np.pow(self.observation_ensemble - simulations, 2))
+                )
+                if np.allclose(obj_funcs_new, obj_funcs, atol=self.tol):
+                    logger.info(
+                        f"Convergence reached at iteration {i} based on tol criterion of objective function."
+                    )
+                    self.noptmax = i
+                    break
+                else:
+                    obj_funcs = obj_funcs_new
+
                 # one least squares update
                 jacobian = RandomizedMaximumLikelihoodSolver.jacobian_empirical(
                     simulation_ensembles=simulations.loc[
@@ -1670,14 +1688,20 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                         jacobian=jacobian,
                     )
                 )
+
+                # check if converged based on parameter values
                 if np.allclose(
                     parameter_ensemble_new.values,
                     parameter_ensemble.values,
                     atol=self.tol,
                 ):
-                    logger.info("RML: Convergence reached based on tol criterion.")
+                    logger.info(
+                        f"Convergence reached at iteration {i} based on tol criterion of parameter values."
+                    )
+                    self.noptmax = i
                     break
-                parameter_ensemble = parameter_ensemble_new
+                else:
+                    parameter_ensemble = parameter_ensemble_new
 
             self.simulation_ensemble = simulations
             self.parameter_ensemble = parameter_ensemble
