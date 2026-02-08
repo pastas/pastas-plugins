@@ -1753,16 +1753,28 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                 self.simulation_ensemble = pd.concat([f.result() for f in sims], axis=1)
 
         elif self.jacobian_method == "empirical":
-            parameter_ensemble = self.parameter_ensemble.copy()
+            parameter_iterations = pd.DataFrame(
+                np.nan,
+                index=pd.MultiIndex.from_product(
+                    [range(self.num_reals), range(self.noptmax + 1)],
+                    names=["real", "iteration"],
+                ),
+                columns=self.ml.parameters.index,
+                dtype=float,
+            )
+            parameter_ensemble_0 = self.parameter_ensemble_prior.copy()
+            parameter_iterations.loc[(slice(None), 0), :] = parameter_ensemble_0.values
+
             obj_funcs = np.full(self.num_reals, np.inf, dtype=float)
             for i in tqdm(range(self.noptmax), desc="RML looping over noptmax"):
+                parameter_ensemble_i = parameter_iterations.loc[(slice(None), i), :]
                 # simulate ensembles in parallel
                 with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
                     futures = [
                         executor.submit(
                             RandomizedMaximumLikelihoodSolver._simulate,
                             r,
-                            parameter_ensemble,
+                            parameter_ensemble_i,
                             self.ml,
                         )
                         for r in range(self.num_reals)
@@ -1770,33 +1782,38 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                     simulations = pd.concat(
                         [f.result() for f in futures], axis=1
                     ).sort_index(axis=1)
-                    if self.add_base:
-                        simulations.columns = list(range(self.num_reals - 1)) + ["base"]
 
                 # check if converged based on objective function
                 obj_funcs_new = np.sqrt(
-                    np.mean(np.pow(self.observation_ensemble - simulations, 2))
+                    np.mean(
+                        np.pow(
+                            self.observation_ensemble.values
+                            - simulations.loc[self.observation_ensemble.index].values,
+                            2,
+                        ),
+                        axis=0,
+                    )
                 )
-                if np.allclose(obj_funcs_new, obj_funcs, atol=self.tol):
+                if np.allclose(obj_funcs_new, obj_funcs[-1], atol=self.tol):
                     logger.info(
                         f"Convergence reached at iteration {i} based on tol criterion of objective function."
                     )
                     self.noptmax = i
                     break
                 else:
-                    obj_funcs = obj_funcs_new
+                    obj_funcs = np.vstack([obj_funcs, obj_funcs_new])
 
                 # one least squares update
                 jacobian = RandomizedMaximumLikelihoodSolver.jacobian_empirical(
                     simulation_ensembles=simulations.loc[
                         self.observation_ensemble.index
                     ].values,
-                    parameter_ensembles=parameter_ensemble.values,
+                    parameter_ensembles=parameter_ensemble_i.values,
                 )
                 parameter_ensemble_new = (
                     RandomizedMaximumLikelihoodSolver._least_squares_em(
                         simulations=simulations,
-                        parameter_ensemble=parameter_ensemble,
+                        parameter_ensemble=parameter_ensemble_i,
                         observation_ensemble=self.observation_ensemble,
                         ml=self.ml,
                         jacobian=jacobian,
@@ -1806,7 +1823,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                 # check if converged based on parameter values
                 if np.allclose(
                     parameter_ensemble_new.values,
-                    parameter_ensemble.values,
+                    parameter_ensemble_i.values,
                     atol=self.tol,
                 ):
                     logger.info(
@@ -1815,12 +1832,30 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                     self.noptmax = i
                     break
                 else:
-                    parameter_ensemble = parameter_ensemble_new
+                    parameter_iterations.loc[(slice(None), i + 1), :] = (
+                        parameter_ensemble_new.values
+                    )
 
+            obj_func_ensemble = pd.DataFrame(
+                obj_funcs.T[:, 1:],  # skip initial objective function values
+                index=pd.Index(range(self.num_reals), name="real"),
+                columns=pd.Index(range(obj_funcs.shape[0] - 1), name="iteration"),
+            ).stack()
+            parameter_iterations = parameter_iterations.dropna(axis=0, how="all")
+            if self.add_base:
+                base_idx = self.num_reals - 1
+                obj_func_ensemble = obj_func_ensemble.rename(
+                    index={base_idx: "base"}, level="real"
+                )
+                parameter_iterations = parameter_iterations.rename(
+                    index={base_idx: "base"}, level="real"
+                )
+                simulations.columns = list(range(base_idx)) + ["base"]
+
+            self.parameter_ensemble = parameter_iterations.dropna(axis=0, how="all")
             self.simulation_ensemble = simulations
-            self.parameter_ensemble = parameter_ensemble
+            self.obj_func_ensemble = obj_func_ensemble
 
-        res = self.observation_ensemble - self.simulation_ensemble
         self.nfev = self.num_reals if self.noptmax is None else self.noptmax
         if self.add_base:
             optimal = self.parameter_ensemble.loc["base"].iloc[-1].values
