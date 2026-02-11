@@ -8,10 +8,11 @@ import pandas as pd
 import pastas as ps
 import pytest
 from numpy.testing import assert_array_almost_equal
-from pastas.typing import ArrayLike
 
-from pastas_plugins.pest.solver import MinimizeTracker, RandomizedMaximumLikelihoodSolver
-
+from pastas_plugins.pest.solver import (
+    MinimizeTracker,
+    RandomizedMaximumLikelihoodSolver,
+)
 
 # =============================================================================
 # Fixtures
@@ -236,9 +237,7 @@ class TestRMLSolverInitialize:
         assert rml_solver.observation_noise is not None
         assert isinstance(rml_solver.observation_noise, pd.DataFrame)
 
-    def test_initialize_parameter_ensemble_shape(
-        self, simple_pastas_model, rml_solver
-    ):
+    def test_initialize_parameter_ensemble_shape(self, simple_pastas_model, rml_solver):
         """Test parameter ensemble has correct shape."""
         rml_solver.ml = simple_pastas_model
         rml_solver.initialize(standard_deviation=0.1)
@@ -403,14 +402,18 @@ class TestRMLSolverProperties:
         # Before solve, should be same as prior (only one iteration)
         assert posterior.shape == initialized_rml_solver.parameter_ensemble_prior.shape
 
-    def test_observation_ensemble_shape(self, initialized_rml_solver, simple_pastas_model):
+    def test_observation_ensemble_shape(
+        self, initialized_rml_solver, simple_pastas_model
+    ):
         """Test observation_ensemble has correct shape."""
         obs_ens = initialized_rml_solver.observation_ensemble
         n_obs = len(simple_pastas_model.observations())
         assert obs_ens.shape[0] == n_obs
         assert obs_ens.shape[1] == 10  # num_reals
 
-    def test_observation_ensemble_index(self, initialized_rml_solver, simple_pastas_model):
+    def test_observation_ensemble_index(
+        self, initialized_rml_solver, simple_pastas_model
+    ):
         """Test observation_ensemble has correct index."""
         obs_ens = initialized_rml_solver.observation_ensemble
         assert obs_ens.index.equals(simple_pastas_model.observations().index)
@@ -420,7 +423,6 @@ class TestRMLSolverProperties:
     ):
         """Test observation ensemble equals obs + noise."""
         obs_ens = initialized_rml_solver.observation_ensemble
-        noise = initialized_rml_solver.observation_noise
         obs = simple_pastas_model.observations()
 
         # For base realization (zero noise), should equal observations
@@ -531,7 +533,9 @@ class TestRMLSolveFiniteDifference:
         assert stderr is not None
 
     @pytest.mark.parametrize("jacobian_method", ["2-point", "3-point"])
-    def test_solve_returns_optimal_parameters(self, simple_pastas_model, jacobian_method):
+    def test_solve_returns_optimal_parameters(
+        self, simple_pastas_model, jacobian_method
+    ):
         """Test solve returns optimal parameters."""
         solver = RandomizedMaximumLikelihoodSolver(
             num_reals=3,
@@ -827,7 +831,9 @@ class TestRMLSolveEdgeCases:
     @pytest.mark.parametrize(
         "minimize_method", ["L-BFGS-B", "TNC", "SLSQP", "trust-constr"]
     )
-    def test_solve_different_minimize_methods(self, simple_pastas_model, minimize_method):
+    def test_solve_different_minimize_methods(
+        self, simple_pastas_model, minimize_method
+    ):
         """Test solve with different minimize methods."""
         solver = RandomizedMaximumLikelihoodSolver(
             num_reals=3,
