@@ -1,6 +1,7 @@
 import json
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass
 from functools import lru_cache, partial
 from logging import getLogger
 from os import cpu_count
@@ -18,7 +19,7 @@ from numpy.typing import NDArray
 from pandas import DataFrame
 from pastas.solver import BaseSolver
 from pastas.typing import ArrayLike, Model
-from scipy.optimize import least_squares
+from scipy.optimize import OptimizeResult, minimize
 from scipy.optimize._numdiff import approx_derivative
 from scipy.stats import norm, truncnorm
 from tqdm import tqdm
@@ -428,7 +429,7 @@ class PestGlmSolver(PestSolver):
         # covariance
         pcov = pd.read_csv(
             self.temp_ws / f"pest.{self.nfev}.post.cov",
-            sep="\s+",
+            sep=r"\s+",
             skiprows=[0],
             nrows=len(ipar.index),
             header=None,
@@ -546,13 +547,19 @@ class PestHpSolver(PestSolver):
             t.join()
 
         par = pd.read_csv(
-            self.temp_ws / "pest.par", index_col=0, sep="\s+", skiprows=[0], header=None
+            self.temp_ws / "pest.par",
+            index_col=0,
+            sep=r"\s+",
+            skiprows=[0],
+            header=None,
         )
         par.index = self.ml.parameters.index[self.vary]
         optimal = self.ml.parameters["initial"].copy().values
         optimal[self.vary] = par.iloc[:, 0].values
 
-        ofr = pd.read_csv(self.temp_ws / "pest.ofr", index_col=0, sep="\s+", skiprows=2)
+        ofr = pd.read_csv(
+            self.temp_ws / "pest.ofr", index_col=0, sep=r"\s+", skiprows=2
+        )
         self.nfev = ofr.index[-1]
         self.obj_func = ofr.at[self.nfev, "total"]
 
@@ -1311,6 +1318,63 @@ class PestSenSolver(PestSolver):
         )
 
 
+@dataclass
+class MinimizeTracker:
+    """Class to track the progress of the SciPy minimize function via callback."""
+
+    real: int
+    param_names: pd.Index
+    p0: np.typing.NDArray[np.float64]
+
+    def __post_init__(self):
+        self.param_values: np.typing.NDArray[np.float64] = self.p0.reshape(1, -1)
+        self.obj_func_values: np.typing.NDArray[np.float64] = np.array([])
+        self.success: bool = False
+
+    def set_initial_obj_func_value(self, initial_value: float) -> None:
+        """Set the initial objective function value."""
+        self.obj_func_values = np.array([initial_value])
+
+    def create_callback_xk(
+        self, obj_func: Callable[[np.typing.NDArray[np.float64]], float]
+    ) -> Callable:
+        """Create a callback for TNC/SLSQP methods that computes obj_func."""
+
+        def callback(xk: np.typing.NDArray[np.float64]) -> None:
+            self.param_values = np.vstack([self.param_values, xk])
+            self.obj_func_values = np.append(self.obj_func_values, obj_func(xk))
+
+        return callback
+
+    def create_callback_result(self) -> Callable:
+        """Create a callback for other methods that uses intermediate results."""
+
+        def callback(intermediate_result: OptimizeResult) -> None:
+            xk = intermediate_result.x
+            self.param_values = np.vstack([self.param_values, xk])
+            self.obj_func_values = np.append(
+                self.obj_func_values, intermediate_result.fun
+            )
+
+        return callback
+
+    @property
+    def parameter_iterations(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            self.param_values,
+            columns=self.param_names,
+            index=pd.Index(range(self.param_values.shape[0]), name=self.real),
+        )
+
+    @property
+    def objfunc_iterations(self) -> pd.Series:
+        return pd.Series(
+            self.obj_func_values,
+            index=pd.Index(range(self.obj_func_values.shape[0]), name=self.real),
+            name=self.real,
+        )
+
+
 class RandomizedMaximumLikelihoodSolver(BaseSolver):
     _name = "RandomizedMaximumLikelihoodSolver"
 
@@ -1318,10 +1382,13 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         self,
         num_reals: int,
         jacobian_method: Literal["2-point", "3-point", "empirical"] = "3-point",
+        beta: float = 0.5,
+        minimize_method: Literal["L-BFGS-B", "TNC", "SLSQP", "trust-constr"] = "SLSQP",
         noptmax: int | None = None,
         seed: int | None = pyemu.en.SEED,
         add_base: bool = True,
         num_workers: int | None = None,
+        tol: float = 1e-8,
         pcov: pd.DataFrame | None = None,
         nfev: int | None = None,
         **kwargs,
@@ -1329,6 +1396,8 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         super().__init__(pcov=pcov, nfev=nfev, **kwargs)
         self.num_reals = num_reals
         self.jacobian_method = jacobian_method
+        self.beta = beta
+        self.minimize_method = minimize_method
         if noptmax is None and jacobian_method == "empirical":
             logger.error(
                 "noptmax must be specified when using 'empirical' jacobian method."
@@ -1337,9 +1406,12 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         self.seed = seed
         self.add_base = add_base
         self.num_workers = cpu_count() if num_workers is None else num_workers
+        self.tol = tol
         self.parameter_ensemble: pd.DataFrame | None = None
         self.observation_noise: pd.DataFrame | None = None
         self.simulation_ensemble: pd.DataFrame | None = None
+        self.obj_func_ensemble: pd.DataFrame | None = None
+        self.convergence_ensemble: pd.DataFrame | None = None
 
     def __repr__(self) -> str:
         _repr = (
@@ -1350,19 +1422,21 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         return _repr
 
     def to_dict(self) -> dict:
-        data = {
-            "class": self._name,
-            "num_reals": self.num_reals,
-            "jacobian_method": self.jacobian_method,
-            "noptmax": self.noptmax,
-            "seed": self.seed,
-            "add_base": self.add_base,
-        }
-
-        # TODO: Use RMLSolver attributes, now go for BaseSolver otherwise can't be stored in PastaStore
-        self.nfev = self.noptmax
-        self.obj_func = 0.0
         data = super().to_dict()
+        data.update(
+            {
+                "class": self._name,
+                "num_reals": self.num_reals,
+                "jacobian_method": self.jacobian_method,
+                "beta": self.beta,
+                "noptmax": self.noptmax,
+                "seed": self.seed,
+                "add_base": self.add_base,
+                # "num_workers": self.num_workers,
+                "tol": self.tol,
+            }
+        )
+
         return data
 
     def initialize(
@@ -1389,7 +1463,10 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
 
         logger.debug("Initialize: Creating parameter noise")
         parameter_data = pd.DataFrame(
-            index=pd.Index(range(self.num_reals)),
+            index=pd.MultiIndex.from_product(
+                [range(self.num_reals), [0]],
+                names=["real", "iteration"],
+            ),
             columns=self.ml.parameters.index,
             dtype=float,
         )
@@ -1403,8 +1480,12 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                 method=method,
             )
             parameter_data[pname] = rvs
-        parameter_data.loc[:, :] = np.random.default_rng(seed=self.seed).permuted(
-            parameter_data.values, axis=0
+        parameter_data.loc[:, :] = np.clip(
+            np.random.default_rng(seed=self.seed).permuted(
+                parameter_data.values, axis=0
+            ),
+            self.ml.parameters.loc[:, "pmin"].values,
+            self.ml.parameters.loc[:, "pmax"].values,
         )
         if self.add_base:
             logger.debug("Initialize: Adding base realization")
@@ -1418,7 +1499,18 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
             parameter_data = parameter_data.rename(index={base_idx: "base"})
 
         self.parameter_ensemble = parameter_data
+        # self.parameter_ensemble_prior = parameter_data.copy()
         self.observation_noise = observation_noise
+
+    @property
+    def parameter_ensemble_prior(self) -> pd.DataFrame:
+        """Get the prior parameter ensemble."""
+        return self.parameter_ensemble.loc[(slice(None), slice(0)), slice(None)]
+
+    @property
+    def parameter_ensemble_posterior(self) -> pd.DataFrame:
+        """Generate the posterior parameter ensemble by adding noise to the prior."""
+        return self.parameter_ensemble.groupby(level="real").tail(1)
 
     @property
     def observation_ensemble(self) -> pd.DataFrame:
@@ -1462,35 +1554,84 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
     def _least_squares_fd(
         real: int,
         parameter_ensemble: pd.DataFrame,
+        parameter_ensemble_prior: pd.DataFrame,
         observation_ensemble: pd.DataFrame,
         ml: Model,
         jacobian_method: Literal["2-point", "3-point"],
+        beta: float,
+        minimize_method: Literal["L-BFGS-B", "TNC", "SLSQP", "trust-constr"],
+        tol: float,
+        noptmax: int,
         **kwargs,
-    ) -> pd.Series:
+    ) -> MinimizeTracker:
         """Perform least squares optimization for a single realization (finite diff)."""
         logger.debug(f"RML: Starting least squares for realization {real}")
 
-        observations = observation_ensemble.iloc[:, real]
-        p = parameter_ensemble.iloc[real]
+        param_cols = parameter_ensemble.columns
+        p0 = parameter_ensemble.iloc[real].values
+        p_prior = parameter_ensemble_prior.iloc[real].values
+        # n_obs = observation_ensemble.shape[0]
+        n_par = len(param_cols)
 
-        def fun(p: ArrayLike) -> ArrayLike:
-            sim = ml.simulate(p)
-            res = observations - sim.loc[observations.index]
-            return res.values
+        bounds = ml.parameters.loc[param_cols, ["pmin", "pmax"]].values
 
-        bounds = (
-            ml.parameters.loc[p.index, "pmin"].values,
-            ml.parameters.loc[p.index, "pmax"].values,
-        )
+        # Define nested functions for residuals, objective function, and jacobian
+        def residuals(p: ArrayLike) -> np.ndarray:
+            sim = ml.simulate(p=p).rename(real)
+            r_obs = (
+                observation_ensemble.iloc[:, real].values
+                - sim.loc[observation_ensemble.index].values
+            )
+            r_prior = p - p_prior
+            return np.concatenate([r_prior, r_obs])
 
-        def jac(p: ArrayLike) -> ArrayLike:
-            return RandomizedMaximumLikelihoodSolver.jacobian_finite_difference(
-                fun=fun, p=p, jacobian_method=jacobian_method, bounds=bounds
+        def obj_func(p: ArrayLike) -> float:
+            r = residuals(p)
+            r_prior = r[:n_par]
+            r_obs = r[n_par:]
+            return beta * np.sum(np.pow(r_prior, 2)) + (1 - beta) * np.sum(
+                np.pow(r_obs, 2)
             )
 
-        result = least_squares(fun, p, jac=jac, bounds=bounds, **kwargs)
+        def jac(p: ArrayLike) -> ArrayLike:
+            r = residuals(p)
+            jacobian = RandomizedMaximumLikelihoodSolver.jacobian_finite_difference(
+                fun=residuals,
+                p=p,
+                jacobian_method=jacobian_method,
+                bounds=bounds.T,
+            )  # shape: (n_obs + n_par, n_par)
+            jacobian[:n_par, :] *= beta
+            jacobian[n_par:, :] *= 1 - beta
+            jacobian_p = jacobian.T @ r
+            return jacobian_p
 
-        return pd.Series(result.x, index=parameter_ensemble.columns, name=real)
+        tracksolve_callback = MinimizeTracker(param_names=param_cols, real=real, p0=p0)
+        # Set initial objective function value
+        tracksolve_callback.set_initial_obj_func_value(obj_func(p0))
+
+        # Create the appropriate callback function
+        if minimize_method in ("TNC", "SLSQP"):
+            callback = tracksolve_callback.create_callback_xk(obj_func)
+        else:
+            callback = tracksolve_callback.create_callback_result()
+
+        options = (
+            {"maxfun": noptmax} if minimize_method == "TNC" else {"maxiter": noptmax}
+        )
+        result = minimize(
+            fun=obj_func,
+            x0=p0,
+            method=minimize_method,
+            jac=jac,
+            bounds=bounds,
+            tol=tol,
+            callback=callback,
+            options=options,
+            **kwargs,
+        )
+        setattr(tracksolve_callback, "success", result.success)
+        return tracksolve_callback
 
     @staticmethod
     def _least_squares_em(
@@ -1511,8 +1652,8 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
 
         # Gauss–Newton / Levenberg–Marquardt step for all realizations
         JTJ = jacobian.T @ jacobian
-        residuals = observation_ensemble.values - sims.values
-        G = jacobian.T @ residuals
+        res = observation_ensemble.values - sims.values
+        G = jacobian.T @ res
         # this is probably not the best way to set lambda
         lamI = 1e-7 * np.diag(np.full(JTJ.shape[0], np.max(np.diag(JTJ))))
         # lamI = 1e-3 * np.diag(np.diag(JTJ))
@@ -1530,9 +1671,9 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         return pnew
 
     @staticmethod
-    def _simulate(real: int, parameters: pd.DataFrame, ml: Model) -> pd.Series:
+    def _simulate(real: int, parameter_ensemble: pd.DataFrame, ml: Model) -> pd.Series:
         """Run the model simulation for one realization."""
-        p = parameters.iloc[real].values
+        p = parameter_ensemble.iloc[real].values
         return ml.simulate(p=p).rename(real)
 
     def solve(self, **kwargs) -> tuple[bool, pd.Series, None]:
@@ -1555,9 +1696,14 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
             func = partial(
                 RandomizedMaximumLikelihoodSolver._least_squares_fd,
                 parameter_ensemble=self.parameter_ensemble,
+                parameter_ensemble_prior=self.parameter_ensemble_prior,
                 observation_ensemble=self.observation_ensemble,
                 ml=self.ml,
                 jacobian_method=self.jacobian_method,
+                beta=self.beta,
+                minimize_method=self.minimize_method,
+                tol=self.tol,
+                noptmax=self.noptmax,
             )
 
             results = process_map(
@@ -1567,34 +1713,75 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                 desc="RML looping over realizations",
                 chunksize=1,
             )
-
-            self.parameter_ensemble = pd.DataFrame(
-                results,
-                index=self.parameter_ensemble.index,
-                columns=self.parameter_ensemble.columns,
+            # Concatenate all parameter iterations with proper MultiIndex structure
+            parameter_iterations = pd.concat(
+                [r.parameter_iterations for r in results],
+                keys=[r.real for r in results],
+                names=["real", "iteration"],
             )
+            self.obj_func_ensemble = pd.concat(
+                {r.real: r.objfunc_iterations for r in results},
+                names=["real", "iteration"],
+            )
+            self.convergence_ensemble = pd.Series(
+                [r.success for r in results],
+                index=pd.Index([r.real for r in results], name="real"),
+                name="converged",
+            )
+
+            if self.add_base:
+                base_idx = self.num_reals - 1
+                parameter_iterations = parameter_iterations.rename(
+                    index={base_idx: "base"}, level="real"
+                )
+                self.obj_func_ensemble = self.obj_func_ensemble.rename(
+                    index={base_idx: "base"}, level="real"
+                )
+                self.convergence_ensemble = self.convergence_ensemble.rename(
+                    index={base_idx: "base"}
+                )
+            self.parameter_ensemble = parameter_iterations
+
             with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
                 sims = [
                     executor.submit(
                         RandomizedMaximumLikelihoodSolver._simulate,
                         r,
-                        self.parameter_ensemble,
+                        self.parameter_ensemble_posterior,
                         self.ml,
                     )
                     for r in range(self.num_reals)
                 ]
-                self.simulation_ensemble = pd.concat([f.result() for f in sims], axis=1)
+                simulations_ensemble = pd.concat([f.result() for f in sims], axis=1)
+                if self.add_base:
+                    simulations_ensemble.columns = list(range(self.num_reals - 1)) + [
+                        "base"
+                    ]
+                self.simulation_ensemble = simulations_ensemble
 
         elif self.jacobian_method == "empirical":
-            parameter_ensemble = self.parameter_ensemble.copy()
-            for _ in tqdm(range(self.noptmax), desc="RML looping over noptmax"):
+            parameter_iterations = pd.DataFrame(
+                np.nan,
+                index=pd.MultiIndex.from_product(
+                    [range(self.num_reals), range(self.noptmax + 1)],
+                    names=["real", "iteration"],
+                ),
+                columns=self.ml.parameters.index,
+                dtype=float,
+            )
+            parameter_ensemble_0 = self.parameter_ensemble_prior.copy()
+            parameter_iterations.loc[(slice(None), 0), :] = parameter_ensemble_0.values
+
+            obj_funcs = np.full(self.num_reals, np.inf, dtype=float)
+            for i in tqdm(range(self.noptmax), desc="RML looping over noptmax"):
+                parameter_ensemble_i = parameter_iterations.loc[(slice(None), i), :]
                 # simulate ensembles in parallel
                 with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
                     futures = [
                         executor.submit(
                             RandomizedMaximumLikelihoodSolver._simulate,
                             r,
-                            parameter_ensemble,
+                            parameter_ensemble_i,
                             self.ml,
                         )
                         for r in range(self.num_reals)
@@ -1602,38 +1789,110 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                     simulations = pd.concat(
                         [f.result() for f in futures], axis=1
                     ).sort_index(axis=1)
-                    if self.add_base:
-                        simulations.columns = list(range(self.num_reals - 1)) + ["base"]
+
+                # check if converged based on objective function
+                obj_funcs_new = np.sqrt(
+                    np.mean(
+                        np.pow(
+                            self.observation_ensemble.values
+                            - simulations.loc[self.observation_ensemble.index].values,
+                            2,
+                        ),
+                        axis=0,
+                    )
+                )
+                if np.allclose(obj_funcs_new, obj_funcs[-1], atol=self.tol):
+                    logger.info(
+                        f"Convergence reached at iteration {i} based on tol criterion of objective function."
+                    )
+                    self.noptmax = i
+                    break
+                else:
+                    obj_funcs = np.vstack([obj_funcs, obj_funcs_new])
 
                 # one least squares update
                 jacobian = RandomizedMaximumLikelihoodSolver.jacobian_empirical(
                     simulation_ensembles=simulations.loc[
                         self.observation_ensemble.index
                     ].values,
-                    parameter_ensembles=parameter_ensemble.values,
+                    parameter_ensembles=parameter_ensemble_i.values,
                 )
-                parameter_ensemble = (
+                parameter_ensemble_new = (
                     RandomizedMaximumLikelihoodSolver._least_squares_em(
                         simulations=simulations,
-                        parameter_ensemble=parameter_ensemble,
+                        parameter_ensemble=parameter_ensemble_i,
                         observation_ensemble=self.observation_ensemble,
                         ml=self.ml,
                         jacobian=jacobian,
                     )
                 )
 
+                # check if converged based on parameter values
+                if np.allclose(
+                    parameter_ensemble_new.values,
+                    parameter_ensemble_i.values,
+                    atol=self.tol,
+                ):
+                    logger.info(
+                        f"Convergence reached at iteration {i} based on tol criterion of parameter values."
+                    )
+                    self.noptmax = i
+                    break
+                else:
+                    parameter_iterations.loc[(slice(None), i + 1), :] = (
+                        parameter_ensemble_new.values
+                    )
+
+            obj_func_ensemble = pd.DataFrame(
+                obj_funcs.T[:, 1:],  # skip initial objective function values
+                index=pd.Index(range(self.num_reals), name="real"),
+                columns=pd.Index(range(obj_funcs.shape[0] - 1), name="iteration"),
+            ).stack()
+            parameter_iterations = parameter_iterations.dropna(axis=0, how="all")
+            convergence_ensemble = pd.Series(
+                np.full(self.num_reals, True, dtype=bool),
+                index=pd.Index(range(self.num_reals), name="real"),
+                name="converged",
+            )
+
+            if self.add_base:
+                base_idx = self.num_reals - 1
+                obj_func_ensemble = obj_func_ensemble.rename(
+                    index={base_idx: "base"}, level="real"
+                )
+                parameter_iterations = parameter_iterations.rename(
+                    index={base_idx: "base"}, level="real"
+                )
+                convergence_ensemble = convergence_ensemble.rename(
+                    index={base_idx: "base"}
+                )
+                simulations.columns = list(range(base_idx)) + ["base"]
+
+            self.parameter_ensemble = parameter_iterations.dropna(axis=0, how="all")
             self.simulation_ensemble = simulations
-            self.parameter_ensemble = parameter_ensemble
+            self.obj_func_ensemble = obj_func_ensemble
+            self.convergence_ensemble = convergence_ensemble
 
-        res = self.observation_ensemble - self.simulation_ensemble
-        self.obj_func = float(np.mean((np.sum(res.values**2, axis=0))))
         self.nfev = self.num_reals if self.noptmax is None else self.noptmax
-
-        optimal = (
-            self.parameter_ensemble.loc["base"].values
-            if self.add_base
-            else self.parameter_ensemble.mean(axis=0).values
+        if self.add_base:
+            optimal = self.parameter_ensemble.loc["base"].iloc[-1].values
+            self.obj_func = self.obj_func_ensemble.loc["base"].iat[-1]
+        else:
+            optimal = (
+                self.parameter_ensemble.groupby(level="real")
+                .tail(1)
+                .mean(axis=0)
+                .values
+            )
+            self.obj_func = (
+                self.obj_func_ensemble.groupby(level="real").tail(1).mean(axis=1)
+            )
+        stderr = (
+            self.parameter_ensemble.groupby(level="real").tail(1).std(axis=0).values
         )
-        stderr = self.parameter_ensemble.std(axis=0).values
-
-        return True, optimal, stderr
+        convergence = (
+            self.convergence_ensemble.any()
+            if hasattr(self, "convergence_ensemble")
+            else True
+        )
+        return convergence, optimal, stderr
