@@ -1410,6 +1410,8 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         self.parameter_ensemble: pd.DataFrame | None = None
         self.observation_noise: pd.DataFrame | None = None
         self.simulation_ensemble: pd.DataFrame | None = None
+        self.obj_func_ensemble: pd.DataFrame | None = None
+        self.convergence_ensemble: pd.DataFrame | None = None
 
     def __repr__(self) -> str:
         _repr = (
@@ -1750,7 +1752,12 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                     )
                     for r in range(self.num_reals)
                 ]
-                self.simulation_ensemble = pd.concat([f.result() for f in sims], axis=1)
+                simulations_ensemble = pd.concat([f.result() for f in sims], axis=1)
+                if self.add_base:
+                    simulations_ensemble.columns = list(range(self.num_reals - 1)) + [
+                        "base"
+                    ]
+                self.simulation_ensemble = simulations_ensemble
 
         elif self.jacobian_method == "empirical":
             parameter_iterations = pd.DataFrame(
@@ -1842,6 +1849,12 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                 columns=pd.Index(range(obj_funcs.shape[0] - 1), name="iteration"),
             ).stack()
             parameter_iterations = parameter_iterations.dropna(axis=0, how="all")
+            convergence_ensemble = pd.Series(
+                np.full(self.num_reals, True, dtype=bool),
+                index=pd.Index(range(self.num_reals), name="real"),
+                name="converged",
+            )
+
             if self.add_base:
                 base_idx = self.num_reals - 1
                 obj_func_ensemble = obj_func_ensemble.rename(
@@ -1850,11 +1863,15 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                 parameter_iterations = parameter_iterations.rename(
                     index={base_idx: "base"}, level="real"
                 )
+                convergence_ensemble = convergence_ensemble.rename(
+                    index={base_idx: "base"}
+                )
                 simulations.columns = list(range(base_idx)) + ["base"]
 
             self.parameter_ensemble = parameter_iterations.dropna(axis=0, how="all")
             self.simulation_ensemble = simulations
             self.obj_func_ensemble = obj_func_ensemble
+            self.convergence_ensemble = convergence_ensemble
 
         self.nfev = self.num_reals if self.noptmax is None else self.noptmax
         if self.add_base:
