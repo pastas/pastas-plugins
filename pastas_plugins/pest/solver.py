@@ -1885,7 +1885,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                 .values
             )
             self.obj_func = (
-                self.obj_func_ensemble.groupby(level="real").tail(1).mean(axis=1)
+                self.obj_func_ensemble.groupby(level="real").tail(1).mean()
             )
         stderr = (
             self.parameter_ensemble.groupby(level="real").tail(1).std(axis=0).values
