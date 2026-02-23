@@ -169,16 +169,15 @@ class PestSolver(BaseSolver):
         self.observations = observations
 
         # setup parameters
-        # initial_parameters = self.ml.parameters["initial"].copy()
-        # for pname, val in initial_parameters.items():
-        #     self.ml.set_parameter(pname, optimal=val)
-        self.ml.parameters.loc[:, "optimal"] = self.ml.parameters.loc[:, "initial"]
-        self.vary = self.ml.parameters.vary.values.astype(bool)
+        for pname, val in self.ml.parameters["initial"].items():
+            self.ml.set_parameter(pname, optimal=val)
+
+        self.vary = self.ml.parameters.loc[:, "vary"].to_numpy(dtype=bool, copy=True)
         parameters = self.ml.parameters[self.vary].copy()
-        parameters.index = [
+        parameters.index = pd.Index([
             p.replace("_A", "_g") if p.endswith("_A") else p for p in parameters.index
-        ]
-        parameters.index.name = "parnames"
+        ], name="parnames"
+        )
         if "constant_d" in parameters.index:
             if np.isnan(parameters.at["constant_d", "pmin"]):
                 self.ml.set_parameter(
@@ -197,7 +196,6 @@ class PestSolver(BaseSolver):
         par_sel = parameters.loc[:, ["optimal"]]
         par_sel.to_csv(self.model_ws / "parameters_sel.csv")
         copy_file(self.model_ws / "parameters_sel.csv", self.temp_ws)
-        self.par_sel = par_sel
 
         # model
         self.ml.to_file(self.model_ws / "model.pas")
@@ -225,19 +223,25 @@ class PestSolver(BaseSolver):
         """
 
         # parameters
+        pmin = self.ml.parameters.loc[self.vary, "pmin"].to_numpy(dtype=float, copy=True)
+        pmax = self.ml.parameters.loc[self.vary, "pmax"].to_numpy(dtype=float, copy=True)
+        pini = self.ml.parameters.loc[self.vary, "initial"].to_numpy(dtype=float, copy=True)
+        pargp = self.ml.parameters.loc[self.vary, "name"].to_numpy(dtype=str, copy=True).tolist()
         self.pf.add_parameters(
             self.model_ws / "parameters_sel.csv",
-            index_cols=[self.par_sel.index.name],
-            use_cols=self.par_sel.columns.to_list(),
+            index_cols=["parnames"],
+            use_cols=["optimal"],
+            use_rows=None,
             par_type="grid",
             par_style="direct",
             transform="none",
-            # pargp=self.par_sel.columns.to_list(),
-            # par_name_base=self.par_sel.columns.to_list(), #[x.split("_")[0] for x in self.par_sel.columns],
-            # lower_bound=self.ml.parameters.loc[self.vary, "pmin"].values.tolist(),
-            # upper_bound=self.ml.parameters.loc[self.vary, "pmax"].values.tolist(),
-            # ult_lbound = self.ml.parameters.loc[self.vary, ["pmin"]].transpose().values.tolist(),
-            # ult_ubound = self.ml.parameters.loc[self.vary, ["pmax"]].transpose().values.tolist(),
+            pargp=pargp,
+            par_name_base=["par"],
+            # lower_bound=pmin,
+            # upper_bound=pmax,
+            # initial_value=pini,
+            # ult_lbound=pmin,
+            # ult_ubound=pmax,
         )
 
         # observations and simulation
@@ -254,14 +258,11 @@ class PestSolver(BaseSolver):
         # create control file
         pst = self.pf.build_pst(self.pf.new_d / "pest.pst", version=version)
         # parameter bounds
-        pst.parameter_data.loc[:, ["parlbnd"]] = self.ml.parameters.loc[
-            self.vary, "pmin"
-        ].values
-        pst.parameter_data.loc[:, ["parubnd"]] = self.ml.parameters.loc[
-            self.vary, "pmax"
-        ].values
+        pst.parameter_data.loc[:, ["parlbnd"]] = pmin
+        pst.parameter_data.loc[:, ["parubnd"]] = pmax
+        pst.parameter_data.loc[:, ["parini"]] = pini
         pst.parameter_data.loc[:, ["parchglim"]] = "relative"
-        pst.parameter_data.loc[:, ["pargp"]] = self.par_sel.columns.to_list()
+        pst.parameter_data.loc[:, ["pargp"]] = pargp
         pst.control_data.noptmax = self.noptmax  # optimization runs
         if self.control_data is not None:
             for key, value in self.control_data.items():
@@ -422,7 +423,7 @@ class PestGlmSolver(PestSolver):
         # optimal parameters
         ipar = pd.read_csv(self.temp_ws / "pest.ipar", index_col=0).transpose()
         ipar.index = self.ml.parameters.index[self.vary]
-        optimal = self.ml.parameters["initial"].copy().values
+        optimal = self.ml.parameters["initial"].to_numpy(dtype=str, copy=True)
         self.nfev = ipar.columns[-1]
         optimal[self.vary] = ipar.loc[:, self.nfev].values
 
@@ -991,8 +992,8 @@ class PestIesSolver(PestSolver):
         self,
         iteration: int = 0,
         from_file: bool = False,
-        tmin: TimestampType = None,
-        tmax: TimestampType = None,
+        tmin: TimestampType | None = None,
+        tmax: TimestampType | None = None,
     ) -> pd.DataFrame:
         """
         Generate or read a simulation ensemble.
@@ -1045,7 +1046,8 @@ class PestIesSolver(PestSolver):
             )
 
             for idx in ipar.columns:
-                self.ml.parameters.loc[ipar.index, "optimal"] = ipar.loc[:, idx].values
+                for ix in idx:
+                    self.ml.set_parameter(ix, optimal=ipar.at[ix, idx])
                 se.loc[:, idx] = (
                     self.ml.simulate(tmin=tmin, tmax=tmax).loc[se.index].values
                 )
@@ -1184,7 +1186,7 @@ class PestIesSolver(PestSolver):
         # optimal parameters
         ipar = self.parameter_ensemble(iteration=self.nfev).transpose()
         ipar.index = self.ml.parameters.index[self.vary]
-        optimal = self.ml.parameters["initial"].copy().values
+        optimal = self.ml.parameters["initial"].to_numpy(dtype=float, copy=True)
         optimal[self.vary] = ipar.loc[:, "base"].values
 
         # standard error (could be totally the wrong way to think about/calculate this)
@@ -1484,8 +1486,8 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
             np.random.default_rng(seed=self.seed).permuted(
                 parameter_data.values, axis=0
             ),
-            self.ml.parameters.loc[:, "pmin"].values,
-            self.ml.parameters.loc[:, "pmax"].values,
+            self.ml.parameters.loc[:, "pmin"].to_numpy(dtype=float, copy=True),
+            self.ml.parameters.loc[:, "pmax"].to_numpy(dtype=float, copy=True),
         )
         if self.add_base:
             logger.debug("Initialize: Adding base realization")
@@ -1495,7 +1497,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
 
             parameter_data.loc[base_idx, :] = self.ml.parameters.loc[
                 :, "initial"
-            ].values
+            ].to_numpy(dtype=float, copy=True)
             parameter_data = parameter_data.rename(index={base_idx: "base"})
 
         self.parameter_ensemble = parameter_data
