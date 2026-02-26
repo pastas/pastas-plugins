@@ -78,6 +78,18 @@ def run_pypestworker(
         for pname, val in pvals.items():
             pname = pname.split(":")[-1] if ":" in pname else pname
             pname = pname.replace("_g", "_A") if pname.endswith("_g") else pname
+            pmin = ml.parameters.at[pname, "pmin"]
+            pmax = ml.parameters.at[pname, "pmax"]
+            if val < pmin:
+                logger.warning(
+                    f"Parameter {pname} with value {val} is below the minimum bound {pmin}. Setting to minimum value."
+                )
+                val = pmin
+            elif val > pmax:
+                logger.warning(
+                    f"Parameter {pname} with value {val} is above the maximum bound {pmax}. Setting to maximum value."
+                )
+                val = pmax
             ml.set_parameter(pname, optimal=val)
         sim = ml.simulate()
         obsvals = sim.loc[ml.observations().index]
