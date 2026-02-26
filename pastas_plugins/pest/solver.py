@@ -60,7 +60,7 @@ def run_pypestworker(
     host: int,
     port: int,
     ml: Model,
-    timeout: float = 0.1,
+    timeout: float = 0.01,
 ) -> None:
     """Run function for PEST using the PyPestWorker (in memory)"""
     ppw = pyemu.os_utils.PyPestWorker(
@@ -174,9 +174,12 @@ class PestSolver(BaseSolver):
 
         self.vary = self.ml.parameters.loc[:, "vary"].to_numpy(dtype=bool, copy=True)
         parameters = self.ml.parameters[self.vary].copy()
-        parameters.index = pd.Index([
-            p.replace("_A", "_g") if p.endswith("_A") else p for p in parameters.index
-        ], name="parnames"
+        parameters.index = pd.Index(
+            [
+                p.replace("_A", "_g") if p.endswith("_A") else p
+                for p in parameters.index
+            ],
+            name="parnames",
         )
         if "constant_d" in parameters.index:
             if np.isnan(parameters.at["constant_d", "pmin"]):
@@ -223,10 +226,20 @@ class PestSolver(BaseSolver):
         """
 
         # parameters
-        pmin = self.ml.parameters.loc[self.vary, "pmin"].to_numpy(dtype=float, copy=True)
-        pmax = self.ml.parameters.loc[self.vary, "pmax"].to_numpy(dtype=float, copy=True)
-        pini = self.ml.parameters.loc[self.vary, "initial"].to_numpy(dtype=float, copy=True)
-        pargp = self.ml.parameters.loc[self.vary, "name"].to_numpy(dtype=str, copy=True).tolist()
+        pmin = self.ml.parameters.loc[self.vary, "pmin"].to_numpy(
+            dtype=float, copy=True
+        )
+        pmax = self.ml.parameters.loc[self.vary, "pmax"].to_numpy(
+            dtype=float, copy=True
+        )
+        pini = self.ml.parameters.loc[self.vary, "initial"].to_numpy(
+            dtype=float, copy=True
+        )
+        pargp = (
+            self.ml.parameters.loc[self.vary, "name"]
+            .to_numpy(dtype=str, copy=True)
+            .tolist()
+        )
         self.pf.add_parameters(
             self.model_ws / "parameters_sel.csv",
             index_cols=["parnames"],
@@ -332,6 +345,7 @@ class PestGlmSolver(PestSolver):
         pcov: DataFrame | None = None,
         nfev: int | None = None,
         port_number: int = 4004,
+        num_workers: int | None = None,
         use_pypestworker: bool = True,
         **kwargs,
     ) -> None:
@@ -379,6 +393,7 @@ class PestGlmSolver(PestSolver):
             long_names=True,
             **kwargs,
         )
+        self.num_workers = cpu_count() if num_workers is None else num_workers
 
     def solve(self, **kwargs) -> tuple[bool, NDArray[np.float64], NDArray[np.float64]]:
         """
@@ -409,7 +424,7 @@ class PestGlmSolver(PestSolver):
                 worker_dir=self.temp_ws,  # the folder which contains the "template" PEST dataset
                 exe_rel_path=self.exe_name.name,  # the PEST software version we want to run
                 pst_rel_path="pest.pst",  # the control file to use with PEST
-                num_workers=1,  # how many agents to deploy
+                num_workers=self.num_workers,  # how many agents to deploy
                 port=self.port_number,  # the port to use for communication
                 worker_root=self.temp_ws.parent,  # where to deploy the agent directories; relative to where python is running
                 master_dir=self.temp_ws,  # the manager directory
@@ -423,9 +438,9 @@ class PestGlmSolver(PestSolver):
         # optimal parameters
         ipar = pd.read_csv(self.temp_ws / "pest.ipar", index_col=0).transpose()
         ipar.index = self.ml.parameters.index[self.vary]
-        optimal = self.ml.parameters["initial"].to_numpy(dtype=str, copy=True)
+        optimal = self.ml.parameters["initial"].to_numpy(dtype=float, copy=True)
         self.nfev = ipar.columns[-1]
-        optimal[self.vary] = ipar.loc[:, self.nfev].values
+        optimal[self.vary] = ipar.loc[:, self.nfev].to_numpy(dtype=float, copy=True)
 
         # covariance
         pcov = pd.read_csv(
@@ -1400,10 +1415,6 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         self.jacobian_method = jacobian_method
         self.beta = beta
         self.minimize_method = minimize_method
-        if noptmax is None and jacobian_method == "empirical":
-            logger.error(
-                "noptmax must be specified when using 'empirical' jacobian method."
-            )
         self.noptmax = noptmax
         self.seed = seed
         self.add_base = add_base
@@ -1693,6 +1704,14 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                 "to solve method. These kwargs will be ignored for now."
                 " See issue https://github.com/pastas/pastas/pull/1031."
             )
+        if self.noptmax is None:
+            logger.info(
+                (
+                    "noptmax is not set. Setting noptmax to 100 times"
+                    "the number of variable parameters for solve method."
+                )
+            )
+            self.noptmax = 100 * np.sum(self.ml.parameters.loc[:, "vary"])
 
         if self.jacobian_method in ("2-point", "3-point"):
             func = partial(
