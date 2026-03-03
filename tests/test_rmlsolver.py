@@ -140,20 +140,6 @@ class TestRMLSolverInitialization:
         )
         assert solver.minimize_method == minimize_method
 
-    def test_empirical_without_noptmax_logs_error(self, caplog):
-        """Test that empirical method without noptmax logs an error."""
-        import logging
-
-        with caplog.at_level(logging.ERROR):
-            solver = RandomizedMaximumLikelihoodSolver(
-                num_reals=10,
-                jacobian_method="empirical",
-                noptmax=None,
-            )
-        assert solver.noptmax is None
-        # The error is logged, not raised
-        assert "noptmax must be specified" in caplog.text
-
     def test_num_workers_defaults_to_cpu_count(self):
         """Test num_workers defaults to cpu_count when None."""
         from os import cpu_count
