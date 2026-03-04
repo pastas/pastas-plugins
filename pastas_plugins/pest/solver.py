@@ -455,15 +455,39 @@ class PestGlmSolver(PestSolver):
         optimal[self.vary] = ipar.loc[:, self.nfev].to_numpy(dtype=float, copy=True)
 
         # covariance
-        pcov = pd.read_csv(
-            self.temp_ws / f"pest.{self.nfev}.post.cov",
-            sep=r"\s+",
-            skiprows=[0],
-            nrows=len(ipar.index),
-            header=None,
+        # 0. Setup dataframe
+        pcov = pd.DataFrame(np.inf, index=ipar.index, columns=ipar.index)
+        matrix_data = []
+        names = []
+        with (self.temp_ws / f"pest.{self.nfev}.post.cov").open("r") as file:
+            # 1. Read the first line to get the dimensions of the covariance matrix
+            dim_line = file.readline().strip().split()
+            n_rows = int(dim_line[0])
+            # 2. Read exactly 'n_rows' lines to extract the matrix
+            for _ in range(n_rows):
+                line = file.readline().strip().split()
+                # Convert the string scientific notations to actual Python floats
+                row_values = [float(val) for val in line]
+                matrix_data.append(row_values)
+            # 3. Read and discard the marker line ('* row and column names')
+            file.readline()
+            # 4. Read the remaining lines in the file to get the names
+            for line in file:
+                clean_name = line.strip()
+                if clean_name:  # Only append if the line isn't empty
+                    names.append(clean_name)
+
+        pcov_sel = pd.DataFrame(matrix_data, index=names, columns=names).rename(
+            index=self.parameter_index, columns=self.parameter_index
         )
-        pcov.index = ipar.index
-        pcov.columns = ipar.index
+        pcov.update(pcov_sel)
+
+        if pcov.isnull().any().any():
+            logger.warning(
+                "Covariance of (some) parameters could not be estimated. "
+                "The covariance of those parameters is set to infinity."
+            )
+
         self.pcov = pcov
         stderr = np.full(len(optimal), np.nan)
         stderr[self.vary] = np.sqrt(np.diag(self.pcov.values))
