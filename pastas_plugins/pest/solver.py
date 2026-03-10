@@ -1235,7 +1235,11 @@ class PestIesSolver(PestSolver):
             - numpy.ndarray: The standard error of the parameters.
         """
         # optimal parameters
-        ipar = self.parameter_ensemble(iteration=self.nfev).transpose().rename(index=self.parameters_index)
+        ipar = (
+            self.parameter_ensemble(iteration=self.nfev)
+            .transpose()
+            .rename(index=self.parameters_index)
+        )
         optimal = self.ml.parameters["initial"].to_numpy(dtype=float, copy=True)
         optimal[self.vary] = ipar.loc[:, "base"].values
 
