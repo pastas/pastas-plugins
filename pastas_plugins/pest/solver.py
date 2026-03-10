@@ -704,7 +704,7 @@ class PestIesSolver(PestSolver):
             **kwargs,
         )
 
-        self.master_ws = temp_ws if self.use_pypestworker else master_ws
+        self.master_ws = Path(temp_ws) if self.use_pypestworker else Path(master_ws)
         self.noptmax = noptmax
         self.ies_num_reals = ies_num_reals
         self.num_workers = cpu_count() if num_workers is None else num_workers
