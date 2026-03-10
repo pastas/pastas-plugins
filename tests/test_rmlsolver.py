@@ -342,21 +342,27 @@ class TestRMLSolverInitialize:
 
     def test_initialize_reproducibility_with_seed(self, simple_pastas_model):
         """Test that same seed produces same results."""
+        seed = 42
+        num_reals = 10
+        add_base = False
+        num_workers = 1
+        standard_deviation = 0.1
         solver1 = RandomizedMaximumLikelihoodSolver(
-            num_reals=10, seed=42, add_base=False, num_workers=1
+            num_reals=num_reals, seed=seed, add_base=add_base, num_workers=num_workers
         )
         solver1.ml = simple_pastas_model
-        solver1.initialize(standard_deviation=0.1)
+        solver1.initialize(standard_deviation=standard_deviation)
 
         solver2 = RandomizedMaximumLikelihoodSolver(
-            num_reals=10, seed=42, add_base=False, num_workers=1
+            num_reals=num_reals, seed=seed, add_base=add_base, num_workers=num_workers
         )
         solver2.ml = simple_pastas_model
-        solver2.initialize(standard_deviation=0.1)
+        solver2.initialize(standard_deviation=standard_deviation)
 
-        # Note: Due to random permutation in initialize, exact match may not occur
-        # But the structure should be identical
         assert solver1.parameter_ensemble.shape == solver2.parameter_ensemble.shape
+        assert_array_almost_equal(
+            solver1.parameter_ensemble.values, solver2.parameter_ensemble.values
+        )
 
     def test_initialize_multiindex_structure(self, simple_pastas_model, rml_solver):
         """Test parameter ensemble has correct MultiIndex structure."""
