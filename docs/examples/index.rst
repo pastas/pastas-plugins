@@ -45,6 +45,13 @@ Below you can find examples for the different plugins.
 
     randomized_maximum_likelihood
 
+.. toctree::
+    :maxdepth: 4
+    :hidden:
+    :caption: Data Worth
+
+    randomized_maximum_likelihood
+
 
 Response functions
 ------------------
@@ -88,3 +95,9 @@ Randomized Maximum Likelihood
 -----------------------------
 
 :doc:`Randomized Maximum Likelihood parameter estimation <randomized_maximum_likelihood>`
+
+
+Data Worth
+----------
+
+:doc:`Data Worth <dataworth>`

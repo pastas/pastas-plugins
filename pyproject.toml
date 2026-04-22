@@ -37,12 +37,13 @@ repository = "https://github.com/pastas/pastas-plugins"
 documentation = "https://pastas.readthedocs.io"
 
 [project.optional-dependencies]
-all = ["pastas_plugins[modflow,crosscorrelation,pest]"]
+all = ["pastas_plugins[crosscorrelation,modflow,pest,responses,reservoirs,dataworth]"]
 crosscorrelation = ["statsmodels"]
 modflow = ["flopy"]
 pest = ["pyemu>=1.3.8", "tqdm"]
 reservoirs = ["pastas_plugins"] # placeholder for empty dependencies
 responses = ["pastas_plugins"] # placeholder for empty dependencies
+dataworth = ["scipy", "matplotlib", "tqdm"]
 ruffing = ["ruff"]
 pytesting = ["pytest>=7", "pytest-cov", "pytest-sugar"]
 ci = ["coverage"]
@@ -103,19 +104,12 @@ description = "run all unit tests for rml_solver plugin"
 extras = ["pytesting", "pest"]
 commands = [["pytest", "tests/test_rmlsolver.py"]]
 
+[tool.tox.env.dataworth]
+description = "run all unit tests for dataworth plugin"
+extras = ["pytesting", "pest"]
+commands = [["pytest", "tests/test_dataworth.py"]]
+
 [tool.tox.env.ruff]
 description = "run ruff checks"
 extras = ["ruffing"]
-commands = [
-        [
-                "ruff",
-                "check",
-                "--extend-select",
-                "I",
-        ],
-        [
-                "ruff",
-                "format",
-                "--check",
-        ],
-]
+commands = [["ruff", "check", "--extend-select", "I"], ["ruff", "format", "--check"]]
