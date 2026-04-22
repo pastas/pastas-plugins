@@ -23,7 +23,7 @@ The following plots are available:
 Example
 ^^^^^^^
 
-See the :ref:`Examples` section for more information on how to use the reservoirs plugin.
+See the :ref:`Examples` section for more information on how to use the :code:`cross_correlation` plugin.
 
 API
 ^^^
