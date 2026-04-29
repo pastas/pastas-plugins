@@ -6,3 +6,4 @@ from pastas_plugins.pest.solver import (
     PestSenSolver,
     RandomizedMaximumLikelihoodSolver,
 )
+from pastas_plugins.pest.version import __version__
