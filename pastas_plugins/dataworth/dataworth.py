@@ -210,7 +210,11 @@ class DataWorth:
             ) / base_parameter_variance
 
         worth_overall = pd.Series(worth_overall, index=obs.index, name="Δlogdet")
-        columns = [f"Δσ$^2$_{ipar}" for ipar in self.ml.parameters.index]
+        columns = [
+            f"Δσ$^2$_{ipar}"
+            for ipar in self.ml.parameters.index
+            if self.ml.parameters.loc[ipar, "vary"]
+        ]
         relative_worth_per_param = pd.DataFrame(
             relative_worth_per_param, index=obs.index, columns=columns
         )
