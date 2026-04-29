@@ -7,14 +7,14 @@ from tqdm.auto import tqdm, trange
 
 
 class DataWorth:
-    def __init__(self, ml, jac=None, objfun_target="noise"):
+    def __init__(self, ml, J=None, objfun_target="noise"):
 
         self.ml = ml
-        if jac is not None:
-            self.jac0 = jac
+        if J is not None:
+            self.J0 = J
 
         else:
-            self.jac0 = ml.solver.result.jac
+            self.J0 = ml.solver.result.jac
 
         self.objfun_target = objfun_target
 
@@ -149,7 +149,7 @@ class DataWorth:
 
     def data_worth(self, J=None, C_eps=None, mask=None):
         if J is None:
-            J = self.jac0
+            J = self.J0
         if C_eps is None:
             C_eps = self.observation_noise_covariance()
 
@@ -180,7 +180,7 @@ class DataWorth:
             data worth (change in log-determinant). Subsequent columsn contain relative
             data worth per parameter (change in variance relative to full model).
         """
-        J = self.jac0
+        J = self.J0
         n_obs, n_params = J.shape
 
         # observations
@@ -254,7 +254,7 @@ class DataWorth:
         )
 
         C_eps = self.observation_noise_covariance()
-        J = self.jac0
+        J = self.J0
         logdet_full, var_params_full = self.data_worth(J=J, C_eps=C_eps)
 
         for i in thinning_intervals:
