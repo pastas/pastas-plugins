@@ -293,7 +293,9 @@ class DataWorth:
 
         # define objective function
         def fobj(p, ml, obs, objfun_target=None):
-            sim = ml.simulate(p=p)
+            p_full = ml.parameters["initial"].to_numpy(copy=True)
+            p_full[ml.parameters["vary"].to_numpy()] = p
+            sim = ml.simulate(p=p_full)
             # Use interpolation to handle obs timestamps not on the simulation grid,
             # mirroring the approach used in ml.residuals().
             sim_at_obs = np.interp(obs.index.asi8, sim.index.asi8, sim.values)
@@ -308,19 +310,21 @@ class DataWorth:
             else:
                 return residuals.values
 
-        params = self.ml.parameters.index.to_list()
+        param_names = (
+            self.ml.parameters["vary"].index[self.ml.parameters["vary"]].to_list()
+        )
         if objfun_target == "residuals":
-            params = [par for par in params if par != "noise_alpha"]
+            param_names = [par for par in param_names if par != "noise_alpha"]
 
         Jadj = approx_derivative(
             fobj,
-            self.ml.parameters.loc[params, "optimal"].values,
+            self.ml.parameters.loc[param_names, "optimal"].values,
             method=method,
             rel_step=None,
             abs_step=None,
             bounds=(
-                self.ml.parameters.loc[params, "pmin"].values,
-                self.ml.parameters.loc[params, "pmax"].values,
+                self.ml.parameters.loc[param_names, "pmin"].values,
+                self.ml.parameters.loc[param_names, "pmax"].values,
             ),
             args=(self.ml, obs),
             kwargs={"objfun_target": objfun_target},
