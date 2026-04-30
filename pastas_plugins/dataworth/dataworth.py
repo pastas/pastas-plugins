@@ -10,14 +10,12 @@ from tqdm.auto import tqdm, trange
 
 
 class DataWorth:
-
     def __init__(
         self,
         ml: Model,
         J: ArrayLike = None,
         objfun_target: Literal["noise", "residuals"] = "noise",
     ):
-
         """Class for computing data worth of observations in a Pastas model.
 
         Parameters
@@ -596,7 +594,7 @@ def plot_data_worth_series(
     fig, axes = plt.subplots(
         data_worth.columns.size,
         1,
-        figsize=(10, 12),
+        figsize=(10, 2 * data_worth.columns.size),
         sharex=True,
         sharey=True,
         constrained_layout=True,

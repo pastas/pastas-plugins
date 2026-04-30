@@ -50,7 +50,7 @@ Below you can find examples for the different plugins.
     :hidden:
     :caption: Data Worth
 
-    randomized_maximum_likelihood
+    dataworth
 
 
 Response functions
