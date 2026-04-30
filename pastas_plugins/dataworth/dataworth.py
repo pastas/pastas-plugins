@@ -1,14 +1,42 @@
+from typing import Literal
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from pastas.typing import ArrayLike, Model
 from scipy.linalg import cho_factor, cho_solve
 from scipy.optimize._numdiff import approx_derivative
 from tqdm.auto import tqdm, trange
 
 
 class DataWorth:
-    def __init__(self, ml, J=None, objfun_target="noise"):
 
+    def __init__(
+        self,
+        ml: Model,
+        J: ArrayLike = None,
+        objfun_target: Literal["noise", "residuals"] = "noise",
+    ):
+
+        """Class for computing data worth of observations in a Pastas model.
+
+        Parameters
+        ----------
+        ml: pastas.Model
+            Pastas model for which to compute data worth.
+        J: np.ndarray, optional
+            Jacobian matrix (N_obs, N_params) to use for data
+            worth analysis. If None, the Jacobian from the model's
+            solver result is used.
+        objfun_target: str, optional
+            Objective function target, either "noise" or "residuals".
+            This determines how the observation noise covariance matrix
+            is computed. If "noise", the variance of the noise process
+            is used, and observations are assumed to be independent. If
+            "residuals", the variance of the residuals is used, and an
+            AR(1) correlation structure can be included to account for
+            temporal correlation between observations. Defaults to "noise".
+        """
         self.ml = ml
         if J is not None:
             self.J0 = J
@@ -20,12 +48,12 @@ class DataWorth:
 
     def observation_noise_covariance(
         self,
-        obs=None,
-        var=None,
-        obs_std=1e-3,
-        noise_alpha=None,
-        objfun_target=None,
-    ):
+        obs: pd.Series | None = None,
+        var: float | None = None,
+        obs_std: float = 1e-3,
+        noise_alpha: float | None = None,
+        objfun_target: Literal["noise", "residuals"] | None = None,
+    ) -> ArrayLike:
         """Get observation noise covariance matrix.
 
         When noise_alpha is supplied this is used to quantify the covariance between
@@ -94,7 +122,7 @@ class DataWorth:
         return C_eps
 
     @staticmethod
-    def fisher_information_matrix(J, C_eps_inv):
+    def fisher_information_matrix(J: ArrayLike, C_eps_inv: ArrayLike) -> ArrayLike:
         """Computes the Fisher information matrix.
 
         J : np.ndarray
@@ -147,7 +175,12 @@ class DataWorth:
             Cp = np.linalg.pinv(FIM, hermitian=True)
         return 0.5 * (Cp + Cp.T)
 
-    def data_worth(self, J=None, C_eps=None, mask=None):
+    def data_worth(
+        self,
+        J: ArrayLike | None = None,
+        C_eps: ArrayLike | None = None,
+        mask: ArrayLike | None = None,
+    ) -> tuple[float, np.ndarray]:
         if J is None:
             J = self.J0
         if C_eps is None:
@@ -163,7 +196,7 @@ class DataWorth:
         var_params_k = np.diag(C_k)
         return logdet_k, var_params_k
 
-    def data_worth_per_observation(self):
+    def data_worth_per_observation(self) -> pd.DataFrame:
         """Compute data worth of each observation.
 
         Computes the data worth of each observation by quantifying the change in
@@ -221,7 +254,9 @@ class DataWorth:
 
         return pd.concat([worth_overall, relative_worth_per_param], axis=1)
 
-    def data_worth_thinning(self, thinning_intervals):
+    def data_worth_thinning(
+        self, thinning_intervals: list[int]
+    ) -> tuple[pd.Series, pd.DataFrame]:
         """Compute data worth of thinning observations.
 
         Computes the data worth of thinning observations by quantifying the change in
@@ -270,14 +305,25 @@ class DataWorth:
         return dw_thinning, dw_thinning_per_param
 
     def recompute_jacobian(
-        self, new_observations, objfun_target=None, method="3-point", **kwargs
-    ):
+        self,
+        new_observations: pd.Series,
+        objfun_target: Literal["noise", "residuals"] | None = None,
+        method="3-point",
+        **kwargs,
+    ) -> ArrayLike:
         """Recompute the Jacobian matrix for a given set of new observations.
 
         Parameters
         ----------
         observations: pd.Series
             Series of observations for which to recompute the Jacobian.
+        objfun_target: str, optional
+            Objective function target, either "noise" or "residuals". This determines
+            how the objective function is defined for the numerical differentiation.
+        method: str, optional
+            Method to use for numerical differentiation. Passed to scipy.optimize.approx_derivative.
+        **kwargs:
+            Additional keyword arguments to pass to scipy.optimize.approx_derivative.
 
         Returns
         -------
@@ -334,8 +380,11 @@ class DataWorth:
         return Jadj
 
     def data_worth_per_added_observation(
-        self, new_observations, objfun_target=None, noise_alpha=None
-    ):
+        self,
+        new_observations: pd.Series,
+        objfun_target: Literal["noise", "residuals"] | None = None,
+        noise_alpha: float | None = None,
+    ) -> pd.DataFrame:
         """Compute data worth of new observations.
 
         Computes the data worth of new observations by quantifying the change in
@@ -436,8 +485,11 @@ class DataWorth:
         ]
 
     def data_worth_new_observations(
-        self, new_observations, objfun_target=None, noise_alpha=None
-    ):
+        self,
+        new_observations: pd.Series,
+        objfun_target: Literal["noise", "residuals"] | None = None,
+        noise_alpha: float | None = None,
+    ) -> tuple[float, pd.DataFrame]:
         """Compute data worth of adding new observations.
 
         Computes the data worth of adding new observations by quantifying the change in
@@ -464,7 +516,7 @@ class DataWorth:
         worth_overall: float
             Overall data worth of adding the new observations, quantified by the change
             in log-determinant of the parameter covariance.
-        relative_worth_per_param: np.ndarray
+        relative_worth_per_param: pd.DataFrame
             Relative data worth per parameter of adding the new observations, quantified
             by the change in variance of each parameter relative to the variance when
             only existing observations are included.
@@ -511,8 +563,11 @@ class DataWorth:
 
 
 def plot_data_worth_series(
-    observations, data_worth: pd.DataFrame, compute_sizes_per_plot=False, **kwargs
-):
+    observations: pd.Series,
+    data_worth: pd.DataFrame,
+    compute_sizes_per_plot=False,
+    **kwargs,
+) -> plt.Axes:
     """Plot data worth as a function of time.
 
     Parameters
@@ -589,7 +644,7 @@ def plot_data_worth_series(
     return axes
 
 
-def plot_data_worth_heatmap(data_worth_series: pd.Series, **kwargs):
+def plot_data_worth_heatmap(data_worth_series: pd.Series, **kwargs) -> plt.Axes:
     """Plot data worth as a heatmap over the year.
 
     Plots years on the y-axis and day of year on the x-axis, with color representing
