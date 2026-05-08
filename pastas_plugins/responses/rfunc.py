@@ -20,8 +20,6 @@ class Theis(RfuncBase):
         Any other parameter that is passed to the RfuncBase class.
     """
 
-    _name = "Theis"
-
     def __init__(self, cutoff: float = 0.999, nterms: int = 10, **kwargs) -> None:
         RfuncBase.__init__(self, cutoff=cutoff, **kwargs)
         self.nparam = 3
@@ -131,66 +129,85 @@ class Edelman(RfuncBase):
 
     Parameters
     ----------
-    up: bool or None, optional
-        indicates whether a positive stress will cause the head to go up (True,
-        default) or down (False), if None the head can go both ways.
-    gain_scale_factor: float, optional
-        the scale factor is used to set the initial value and the bounds of the gain
-        parameter, computed as 1 / gain_scale_factor.
     cutoff: float, optional
-        proportion after which the step function is cut off.
+        Fraction of the step response after which the response is truncated.
+        Default is 0.999.
+    use_block: bool, optional
+        Use the block response to compute the response (for convolution).
+        The block response is the difference of the step response. Default is
+        True. If False, the impulse response is computed and used for convolution.
 
-    Notes
-    -----
-    The Edelman function is explained in :cite:t:`edelman_over_1947`.
-
-    The impulse response function for this class can be viewed on the Documentation
-    website or using `latexify` by running the following code in a Jupyter notebook
-    environment::
-
-        ps.Edelman.impulse
+    Attributes
+    ----------
+    up: bool or None, optional
+        Whether a positive stress causes the head to go up (`True`), down
+        (`False`), or either direction (`None`).
+    gain_scale_factor: float, optional
+        Scale factor used to set the initial value and bounds of the gain
+        parameter, computed as `1 / gain_scale_factor`.
 
     """
-
-    _name = "Edelman"
 
     def __init__(
         self,
         cutoff: float = 0.999,
+        use_block: bool = True,
         **kwargs,
     ) -> None:
-        RfuncBase.__init__(self, cutoff=cutoff, **kwargs)
-        self.nparam = 1
+        super().__init__(cutoff=cutoff, use_block=use_block, **kwargs)
+
+    @property
+    def nparam(self) -> int:
+        return 1
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
-            columns=["initial", "pmin", "pmax", "vary", "name", "dist"]
+            [
+                (1.0, 0.0, 1e3, True, name, "uniform"),
+            ],
+            index=[name + "_beta"],
+            columns=["initial", "pmin", "pmax", "vary", "name", "dist"],
         )
-        beta_init = 1.0
-        parameters.loc[name + "_beta"] = (beta_init, 0, 1000, True, name, "uniform")
         return parameters
 
-    def get_tmax(self, p: ArrayLike, cutoff: Optional[float] = None) -> float:
+    def get_tmax(self, p: ArrayLike, cutoff: float | None = None) -> float:
         if cutoff is None:
             cutoff = self.cutoff
         return 1.0 / (p[0] * erfcinv(cutoff)) ** 2
 
-    @staticmethod
-    def gain(p: ArrayLike) -> float:
+    def gain(self, p: ArrayLike) -> float:
         return 1.0
-
-    @staticmethod
-    def impulse(t: ArrayLike, p: ArrayLike) -> ArrayLike:
-        (a,) = p
-        return 1 / (np.sqrt(np.pi) * a * t**1.5) * np.exp(-1 / (a**2 * t))
 
     def step(
         self,
         p: ArrayLike,
         dt: float = 1.0,
-        cutoff: Optional[float] = None,
-        maxtmax: Optional[int] = None,
+        cutoff: float | None = None,
+        maxtmax: float | None = None,
+        **kwargs,
     ) -> ArrayLike:
-        t = self.get_t(p=p, dt=dt, cutoff=cutoff, maxtmax=maxtmax)
+        t = self.get_t(p=p, dt=dt, cutoff=cutoff, maxtmax=maxtmax, **kwargs)
         s = erfc(1 / (p[0] * np.sqrt(t)))
         return s
+
+    def moment(
+        self,
+        p: ArrayLike,
+        order: int,
+        method: Literal["discrete", "exact"] = "discrete",
+        dt: float = 1.0,
+    ) -> float:
+        if method == "discrete":
+            t = self.get_t(p=p, dt=dt, cutoff=self.cutoff)
+            b = Series(self.block(p=p, dt=dt, cutoff=self.cutoff), index=t)
+            return moment(b, order)
+        else:
+            raise ValueError(
+                f"Invalid method {method}. Choose 'discrete' is supported for {self._name}."
+            )
+
+    @staticmethod
+    def impulse(t: ArrayLike, p: ArrayLike) -> ArrayLike:
+        (a,) = p
+        return 1 / (np.sqrt(pi) * a * t**1.5) * np.exp(-1 / (a**2 * t))
+
