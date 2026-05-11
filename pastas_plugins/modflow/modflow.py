@@ -1271,8 +1271,6 @@ class ModflowUzf(ModflowPkgLoggerMixin):
         return {"prec": self.prec, "evap": self.evap}
 
 
-
-
 class ModflowDrn(ModflowPkgLoggerMixin):
     """DRN package wrapper. Calibrates drain elevation fraction and conductance."""
 
@@ -1378,7 +1376,6 @@ class ModflowDrn(ModflowPkgLoggerMixin):
         None
         """
         return None
-
 
 
 def fast_write_ts(
