@@ -1,8 +1,9 @@
-from typing import Optional
+from typing import Literal, Optional
 
 import numpy as np
-from pandas import DataFrame
+from pandas import DataFrame, Series
 from pastas.rfunc import RfuncBase
+from pastas.stats.core import moment
 from pastas.typing import ArrayLike
 from scipy.special import erfc, erfcinv, exp1
 
@@ -209,5 +210,4 @@ class Edelman(RfuncBase):
     @staticmethod
     def impulse(t: ArrayLike, p: ArrayLike) -> ArrayLike:
         (a,) = p
-        return 1 / (np.sqrt(pi) * a * t**1.5) * np.exp(-1 / (a**2 * t))
-
+        return 1 / (np.sqrt(np.pi) * a * t**1.5) * np.exp(-1 / (a**2 * t))
