@@ -10,7 +10,10 @@ Below you can find examples for the different plugins.
     :hidden:
 
     responses
-    modflow
+    modflow_linear
+    modflow_tarso
+    modflow_uzf
+    modflow_api
     crosscorrelation_seriesJ
     pest_linear_regression
     pest_pastas_glm_hp
@@ -27,17 +30,21 @@ Below you can find examples for the different plugins.
 
 .. rubric:: Modflow stressmodel
 
-`Using a Modflow model as a stressmodel in Pastas`_
+`Single cell MODFLOW model - Linear Recharge`_
 
-.. _Using a Modflow model as a stressmodel in Pastas: modflow.html
+.. _Single cell MODFLOW model - Linear Recharge: modflow_linear.html
 
-`Modflow Time Series Model with the UZF package`_
+`Single cell MODFLOW model - TARSO`_
 
-.. _Modflow Time Series Model with the UZF package: modflow_uzf.html
+.. _Single cell MODFLOW model - TARSO: modflow_tarso.html
 
-`Modflow Time Series Model with the DRN package`_
+`Single cell MODFLOW model - UZF Recharge`_
 
-.. _Modflow Time Series Model with the DRN package: modflow_drn.html
+.. _Single cell MODFLOW model - UZF Recharge: modflow_uzf.html
+
+`Running a single cell MODFLOW model with the API`_
+
+.. _MODFLOW API: modflow_api.html
 
 
 .. rubric:: Cross-correlation
