@@ -421,6 +421,7 @@ class ModflowModel(StressModelBase):
         np.ndarray
             1-D array of recharge values, one per stress period.
         """
+        restore_oc = False
         p_series = Series(p, index=self.parameters.index)
         if "RCH" in self._packages:
             rch = self._packages["RCH"]
@@ -435,14 +436,29 @@ class ModflowModel(StressModelBase):
                 save_flows=True,
                 budget_filerecord=f"{self._gwf.name.lower()}.uzf.bud",
             )
-            _ = flopy.mf6.ModflowGwfoc(
+            if "OC" in self._packages:
+                restore_oc = True
+
+            # save budget output
+            oc = flopy.mf6.ModflowGwfoc(
                 self._gwf,
                 budget_filerecord=f"{self._gwf.name}.bud",
                 saverecord=[("BUDGET", "ALL")],
             )
+            oc.write()
             self._gwf.name_file.write()
-            _sim = self.simulate(p)
+            # run simulation with updated pkgs
+            _ = self._simulation.run_simulation(silent=self.silent)
+            # clean up temporary budget output package
             self._gwf.remove_package("OC")  # remove the budget output package again
+            # if non-api run, ensure the old OC is restored
+            if restore_oc:
+                oc = flopy.mf6.ModflowGwfoc(
+                    self._gwf,
+                    head_filerecord=f"{self._gwf.name}.hds",
+                    saverecord=[("HEAD", "ALL")],
+                )
+                oc.write()
             # after simulation:
             uzobj = flopy.utils.CellBudgetFile(
                 f"{self.sim_ws}/{self._gwf.name}.uzf.bud", precision="double"
