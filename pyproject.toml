@@ -15,7 +15,7 @@ maintainers = [
         { name = "M. Bakker", email = "markbak@gmail.com" },
 ]
 
-requires-python = ">= 3.10"
+requires-python = ">= 3.11"
 dependencies = ["pastas"]
 keywords = ["hydrology", "groundwater", "timeseries", "analysis"]
 classifiers = [
@@ -24,7 +24,6 @@ classifiers = [
         'Intended Audience :: Other Audience',
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python :: 3 :: Only',
-        'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
         'Programming Language :: Python :: 3.13',
@@ -106,16 +105,4 @@ commands = [["pytest", "tests/test_rmlsolver.py"]]
 [tool.tox.env.ruff]
 description = "run ruff checks"
 extras = ["ruffing"]
-commands = [
-        [
-                "ruff",
-                "check",
-                "--extend-select",
-                "I",
-        ],
-        [
-                "ruff",
-                "format",
-                "--check",
-        ],
-]
+commands = [["ruff", "check", "--extend-select", "I"], ["ruff", "format", "--check"]]
