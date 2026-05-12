@@ -999,6 +999,7 @@ class ModflowUzf(ModflowPkgLoggerMixin):
         extdpfrac: float,
         save_flows: bool = False,
         budget_filerecord: str | None = None,
+        **kwargs,
     ) -> None:
         """Write UZF package, time-series file, and companion DRN.
 
@@ -1102,6 +1103,7 @@ class ModflowUzf(ModflowPkgLoggerMixin):
             },
             budget_filerecord=budget_filerecord,
             pname=self._name,
+            **kwargs,
         )
         logger.info(
             "UZF update_package: vks=%.6g, thtr=%.6g, thts=%.6g, "
