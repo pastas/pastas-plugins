@@ -21,6 +21,8 @@ class Theis(RfuncBase):
         Any other parameter that is passed to the RfuncBase class.
     """
 
+    _name = "Theis"  # NOTE: temporary fix to allow pastas-plugins to pass tests
+
     def __init__(self, cutoff: float = 0.999, nterms: int = 10, **kwargs) -> None:
         RfuncBase.__init__(self, cutoff=cutoff, **kwargs)
         self.nterms = nterms
