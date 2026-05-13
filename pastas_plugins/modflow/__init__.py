@@ -11,4 +11,4 @@ from pastas_plugins.modflow.modflow import (
 from pastas_plugins.modflow.stressmodels import ModflowModel
 from pastas_plugins.modflow.version import __version__
 
-ps.stressmodel.ModflowModel = ModflowModel
+ps.stressmodels.ModflowModel = ModflowModel
