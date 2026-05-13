@@ -1,4 +1,6 @@
 # ruff: noqa: F401
+import pastas as ps
+
 from pastas_plugins.modflow.modflow import (
     ModflowDrn,
     ModflowDrnSto,
@@ -8,3 +10,5 @@ from pastas_plugins.modflow.modflow import (
 )
 from pastas_plugins.modflow.stressmodels import ModflowModel
 from pastas_plugins.modflow.version import __version__
+
+ps.stressmodels.ModflowModel = ModflowModel

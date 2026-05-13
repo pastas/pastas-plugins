@@ -21,10 +21,16 @@ class Theis(RfuncBase):
         Any other parameter that is passed to the RfuncBase class.
     """
 
+    _name = "Theis"  # NOTE: temporary fix to allow pastas-plugins to pass tests
+
     def __init__(self, cutoff: float = 0.999, nterms: int = 10, **kwargs) -> None:
         RfuncBase.__init__(self, cutoff=cutoff, **kwargs)
-        self.nparam = 3
         self.nterms = nterms
+
+    @property
+    def nparam(self) -> int:
+        """Number of parameters of the response function."""
+        return 3
 
     def get_init_parameters(self, name: str) -> DataFrame:
         parameters = DataFrame(
@@ -100,6 +106,18 @@ class Theis(RfuncBase):
             )
 
         return s
+
+    def impulse(self, *args, **kwargs) -> ArrayLike:
+        """The impulse response function."""
+        raise NotImplementedError(
+            "The impulse response function is not implemented yet."
+        )
+
+    def moment(self, *args, **kwargs) -> float:
+        """The moment of the response function."""
+        raise NotImplementedError(
+            "The moment of the response function is not implemented yet."
+        )
 
     def to_dict(self):
         """Method to export the response function to a dictionary.
