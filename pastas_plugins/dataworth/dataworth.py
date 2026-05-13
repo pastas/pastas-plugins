@@ -306,7 +306,7 @@ class DataWorth:
         self,
         new_observations: pd.Series,
         objfun_target: Literal["noise", "residuals"] | None = None,
-        method="3-point",
+        method="2-point",
         **kwargs,
     ) -> ArrayLike:
         """Recompute the Jacobian matrix for a given set of new observations.
@@ -319,7 +319,10 @@ class DataWorth:
             Objective function target, either "noise" or "residuals". This determines
             how the objective function is defined for the numerical differentiation.
         method: str, optional
-            Method to use for numerical differentiation. Passed to scipy.optimize.approx_derivative.
+            Method to use for numerical differentiation. Passed to
+            `scipy.optimize.approx_derivative`.
+            TODO: assert from ml.solver.jac what is used for calibration and
+            use the same method here by default. Can be done in Pastas 2.0.
         **kwargs:
             Additional keyword arguments to pass to scipy.optimize.approx_derivative.
 
