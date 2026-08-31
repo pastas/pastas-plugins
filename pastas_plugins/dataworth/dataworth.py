@@ -194,7 +194,7 @@ class DataWorth:
         var_params_k = np.diag(C_k)
         return logdet_k, var_params_k
 
-    def data_worth_per_observation(self) -> pd.DataFrame:
+    def data_worth_per_observation(self, as_percentage: bool = False) -> pd.DataFrame:
         """Compute data worth of each observation.
 
         Computes the data worth of each observation by quantifying the change in
@@ -210,6 +210,13 @@ class DataWorth:
             DataFrame of length n_obs with data worth. First column contains overall
             data worth (change in log-determinant). Subsequent columsn contain relative
             data worth per parameter (change in variance relative to full model).
+        as_percentage : bool
+            If True, convert the data worth metrics to percentage increase in standard
+            error. For the overall metric (log-det): r = exp(Δlogdet / 2N), expressed as
+            (r-1)*100 %. For per-parameter: r_j = sqrt(1 + δσ²_j), expressed as (r_j-1)*100 %.
+            A value of 0 % means the observation had no effect on the parameter uncertainty;
+            positive values indicate how much the std error would inflate if that observation
+            were removed.
         """
         J = self.J0
         n_obs, n_params = J.shape
@@ -240,9 +247,10 @@ class DataWorth:
                 var_params_k - base_parameter_variance
             ) / base_parameter_variance
 
-        worth_overall = pd.Series(worth_overall, index=obs.index, name="Δlogdet")
+        name = "Increase in gen. std. err. (%)" if as_percentage else "Δlogdet"
+        worth_overall = pd.Series(worth_overall, index=obs.index, name=name)
         columns = [
-            f"Δσ$^2$_{ipar}"
+            f"Δσ {ipar} (%)" if as_percentage else rf"Δσ$^2$ {ipar}"
             for ipar in self.ml.parameters.index
             if self.ml.parameters.loc[ipar, "vary"]
         ]
@@ -250,7 +258,22 @@ class DataWorth:
             relative_worth_per_param, index=obs.index, columns=columns
         )
 
-        return pd.concat([worth_overall, relative_worth_per_param], axis=1)
+        if as_percentage:
+            # Convert raw data worth metrics to percentage increase in standard error.
+            # For the overall metric (log-det): r = exp(Δlogdet / 2N), expressed as (r-1)*100 %.
+            # For per-parameter: r_j = sqrt(1 + δσ²_j), expressed as (r_j-1)*100 %.
+            # A value of 0 % means the observation had no effect; positive values indicate
+            # how much the std error would inflate if that observation were removed.
+
+            N = self.ml.parameters.index.size
+            worth_overall = (np.exp(worth_overall / (2 * N)) - 1) * 100
+            relative_worth_per_param = (
+                (1 + relative_worth_per_param).pow(0.5) - 1
+            ) * 100
+
+        df = pd.concat([worth_overall, relative_worth_per_param], axis=1)
+
+        return df
 
     def data_worth_thinning(
         self, thinning_intervals: list[int]
@@ -340,6 +363,7 @@ class DataWorth:
 
         # define objective function
         def fobj(p, ml, obs, objfun_target=None):
+            # TODO: replace by pastas.solver.objerctive_function.misfit
             p_full = ml.parameters["initial"].to_numpy(copy=True)
             p_full[ml.parameters["vary"].to_numpy()] = p
             sim = ml.simulate(p=p_full)
@@ -362,7 +386,6 @@ class DataWorth:
         )
         if objfun_target == "residuals":
             param_names = [par for par in param_names if par != "noise_alpha"]
-
         Jadj = approx_derivative(
             fobj,
             self.ml.parameters.loc[param_names, "optimal"].values,
@@ -385,6 +408,7 @@ class DataWorth:
         new_observations: pd.Series,
         objfun_target: Literal["noise", "residuals"] | None = None,
         noise_alpha: float | None = None,
+        as_percentage: bool = False,
     ) -> pd.DataFrame:
         """Compute data worth of new observations.
 
@@ -469,27 +493,39 @@ class DataWorth:
                 var_param_base - var_params_k
             ) / var_param_base
 
-        worth_overall = pd.Series(worth_overall, index=obs.index, name="Δlogdet")
+        name = "Reduction std. err. (%)" if as_percentage else "Δlogdet"
+        worth_overall = pd.Series(worth_overall, index=obs.index, name=name)
         if objfun_target == "residuals":
             parameter_names = [
                 ipar for ipar in self.ml.parameters.index if ipar != "noise_alpha"
             ]
         else:
             parameter_names = self.ml.parameters.index
-        columns = [f"Δσ$^2$_{ipar}" for ipar in parameter_names]
+        columns = [
+            rf"$P_σ$ {ipar} (%)" if as_percentage else rf"Δσ$^2$ {ipar}"
+            for ipar in parameter_names
+        ]
         relative_worth_per_param = pd.DataFrame(
             relative_worth_per_param, index=obs.index, columns=columns
         )
+        if as_percentage:
+            worth_overall = (1 - np.exp(-worth_overall / (2 * n_params))).multiply(100)
+            relative_worth_per_param = (
+                1 - (1 - relative_worth_per_param).pow(0.5)
+            ) * 100
 
-        return pd.concat([worth_overall, relative_worth_per_param], axis=1).iloc[
+        df = pd.concat([worth_overall, relative_worth_per_param], axis=1).iloc[
             new_obs_idx
         ]
+
+        return df
 
     def data_worth_new_observations(
         self,
         new_observations: pd.Series,
         objfun_target: Literal["noise", "residuals"] | None = None,
         noise_alpha: float | None = None,
+        as_percentage: bool = False,
     ) -> tuple[float, pd.DataFrame]:
         """Compute data worth of adding new observations.
 
@@ -511,6 +547,8 @@ class DataWorth:
         noise_alpha: float, optional
             Decay parameter for the AR(1) correlation model (days). Only used when
             ``objfun_target="residuals"``. If None, the fitted model value is used.
+        as_percentage: bool, optional
+            If True, the data worth is returned as a percentage of the original variance.
 
         Returns
         -------
@@ -560,6 +598,19 @@ class DataWorth:
 
         worth_overall = logdet_base - logdet_new
         relative_worth_per_param = (var_param_base - var_param_new) / var_param_base
+        if as_percentage:
+            worth_overall = (
+                1 - np.exp(-worth_overall / (2 * self.ml.parameters.index.size - 1))
+            ) * 100
+            relative_worth_per_param = (
+                1 - np.power(1 - relative_worth_per_param, 0.5)
+            ) * 100
+
+        relative_worth_per_param = pd.DataFrame(
+            relative_worth_per_param,
+            index=self.ml.parameters.index,
+            columns=["Relative Worth (%)"] if as_percentage else ["Relative Worth"],
+        )
         return worth_overall, relative_worth_per_param
 
 
