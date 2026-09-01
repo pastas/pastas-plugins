@@ -3,10 +3,14 @@ from typing import Literal
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from packaging.version import parse as parse_version
+from pastas import __version__ as ps_version
 from pastas.typing import ArrayLike, Model
 from scipy.linalg import cho_factor, cho_solve
 from scipy.optimize._numdiff import approx_derivative
 from tqdm.auto import tqdm, trange
+
+PASTAS_VERSION = parse_version(ps_version)
 
 
 class DataWorth:
@@ -88,7 +92,12 @@ class DataWorth:
 
         if var is None:
             if objfun_target == "noise":
-                var = np.var(self.ml.noise() * self.ml._noise_weights())
+                noise_weights = (
+                    self.ml.noise_weights()
+                    if PASTAS_VERSION < parse_version("2.0.0")
+                    else self.ml._noise_weights()
+                )
+                var = np.var(self.ml.noise() * noise_weights)
             elif objfun_target == "residuals":
                 var = np.var(self.ml.residuals())
             else:
