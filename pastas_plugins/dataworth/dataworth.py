@@ -13,7 +13,7 @@ class DataWorth:
     def __init__(
         self,
         ml: Model,
-        J: ArrayLike = None,
+        J: ArrayLike | None = None,
         objfun_target: Literal["noise", "residuals"] = "noise",
     ):
         """Class for computing data worth of observations in a Pastas model.
@@ -136,7 +136,9 @@ class DataWorth:
         return J.T @ C_eps_inv @ J
 
     @staticmethod
-    def compute_covariance(J, C_eps, mask=None):
+    def compute_covariance(
+        J: ArrayLike, C_eps: ArrayLike, mask: ArrayLike | None = None
+    ):
         """Computes the posterior parameter covariance matrix (Cp).
 
         J : np.ndarray
@@ -329,7 +331,7 @@ class DataWorth:
         self,
         new_observations: pd.Series,
         objfun_target: Literal["noise", "residuals"] | None = None,
-        method="2-point",
+        method: Literal["2-point", "3-point"] = "2-point",
         **kwargs,
     ) -> ArrayLike:
         """Recompute the Jacobian matrix for a given set of new observations.
@@ -617,7 +619,7 @@ class DataWorth:
 def plot_data_worth_series(
     observations: pd.Series,
     data_worth: pd.DataFrame,
-    compute_sizes_per_plot=False,
+    compute_sizes_per_plot: bool = False,
     **kwargs,
 ) -> plt.Axes:
     """Plot data worth as a function of time.
