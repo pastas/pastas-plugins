@@ -3,14 +3,10 @@ from typing import Literal
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from packaging.version import parse as parse_version
-from pastas import __version__ as pastas_version
 from pastas.typing import ArrayLike, Model
 from scipy.linalg import cho_factor, cho_solve
 from scipy.optimize._numdiff import approx_derivative
 from tqdm.auto import tqdm, trange
-
-PASTAS_VERSION = parse_version(parse_version(pastas_version).base_version)
 
 
 class DataWorth:
@@ -92,12 +88,7 @@ class DataWorth:
 
         if var is None:
             if objfun_target == "noise":
-                noise_weights = (
-                    self.ml.noise_weights()
-                    if PASTAS_VERSION < parse_version("2.0.0")
-                    else self.ml._noise_weights()
-                )
-                var = np.var(self.ml.noise() * noise_weights)
+                var = np.var(self.ml.noise() * self.ml.noise_weights())
             elif objfun_target == "residuals":
                 var = np.var(self.ml.residuals())
             else:
@@ -373,13 +364,16 @@ class DataWorth:
         obs = obs.loc[~obs.index.duplicated(keep="first")]
 
         # define objective function
-        def fobj(p, ml, obs, objfun_target=None):
+        def fobj(p, ml, p_names, obs, objfun_target=None):
             # TODO: replace by pastas.solver.objerctive_function.misfit
-            p_full = ml.parameters["initial"].to_numpy(copy=True)
-            p_full[ml.parameters["vary"].to_numpy()] = p
+            p_full = ml.parameters.loc[p_names, "initial"].to_numpy(
+                dtype=float, copy=True
+            )
+            p_full[ml.parameters.loc[p_names, "vary"].to_numpy(dtype=bool)] = p
             sim = ml.simulate(p=p_full)
             # Use interpolation to handle obs timestamps not on the simulation grid,
             # mirroring the approach used in ml.residuals().
+            # TODO: change to ml._simulate_on_observations
             sim_at_obs = np.interp(obs.index.asi8, sim.index.asi8, sim.values)
             residuals = pd.Series(obs.values - sim_at_obs, index=obs.index)
             if ml.noisemodel is not None and objfun_target != "residuals":
@@ -392,23 +386,25 @@ class DataWorth:
             else:
                 return residuals.values
 
-        param_names = (
-            self.ml.parameters["vary"].index[self.ml.parameters["vary"]].to_list()
-        )
+        p_names = self.ml.parameters["vary"].index[self.ml.parameters["vary"]].to_list()
         if objfun_target == "residuals":
-            param_names = [par for par in param_names if par != "noise_alpha"]
+            p_names = [par for par in p_names if par != "noise_alpha"]
         Jadj = approx_derivative(
             fobj,
-            self.ml.parameters.loc[param_names, "optimal"].values,
+            self.ml.parameters.loc[p_names, "optimal"].values,
             method=method,
             rel_step=None,
             abs_step=None,
             bounds=(
-                self.ml.parameters.loc[param_names, "pmin"].values,
-                self.ml.parameters.loc[param_names, "pmax"].values,
+                self.ml.parameters.loc[p_names, "pmin"].values,
+                self.ml.parameters.loc[p_names, "pmax"].values,
             ),
-            args=(self.ml, obs),
-            kwargs={"objfun_target": objfun_target},
+            kwargs={
+                "ml": self.ml,
+                "p_names": p_names,
+                "obs": obs,
+                "objfun_target": objfun_target,
+            },
             **kwargs,
         )
 
@@ -572,8 +568,7 @@ class DataWorth:
             only existing observations are included.
 
         """
-        if objfun_target is None:
-            objfun_target = self.objfun_target
+        objfun_target = self.objfun_target if objfun_target is None else objfun_target
 
         # get existing observations and combine with new observations
         obs_calib = self.ml.observations()
@@ -593,6 +588,7 @@ class DataWorth:
             C_eps = self.observation_noise_covariance(
                 obs=obs, objfun_target=objfun_target
             )
+            index = self.ml.parameters.index[self.ml.parameters["vary"]]
         else:
             if noise_alpha is None:
                 noise_alpha = self.ml.parameters.loc["noise_alpha", "optimal"]
@@ -600,6 +596,9 @@ class DataWorth:
             C_eps = self.observation_noise_covariance(
                 obs=obs, noise_alpha=noise_alpha, objfun_target=objfun_target
             )
+            index = self.ml.parameters.index[
+                self.ml.parameters["vary"] & (self.ml.parameters.index != "noise_alpha")
+            ]
 
         # base model covariance, use only observations used in calibration
         logdet_base, var_param_base = self.data_worth(Jadj, C_eps, mask=mask)
@@ -619,7 +618,7 @@ class DataWorth:
 
         relative_worth_per_param = pd.DataFrame(
             relative_worth_per_param,
-            index=self.ml.parameters.index,
+            index=index,
             columns=["Relative Worth (%)"] if as_percentage else ["Relative Worth"],
         )
         return worth_overall, relative_worth_per_param
