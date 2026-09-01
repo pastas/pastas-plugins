@@ -4,13 +4,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from packaging.version import parse as parse_version
-from pastas import __version__ as ps_version
+from pastas import __version__ as pastas_version
 from pastas.typing import ArrayLike, Model
 from scipy.linalg import cho_factor, cho_solve
 from scipy.optimize._numdiff import approx_derivative
 from tqdm.auto import tqdm, trange
 
-PASTAS_VERSION = parse_version(ps_version)
+PASTAS_VERSION = parse_version(parse_version(pastas_version).base_version)
 
 
 class DataWorth:
