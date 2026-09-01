@@ -210,7 +210,7 @@ class TestObservationNoiseCovariance:
         var = 2.5
         C_eps = dataworth_instance.observation_noise_covariance(var=var)
 
-        n_obs = len(dataworth_instance.ml.observations())
+        _ = len(dataworth_instance.ml.observations())
         # With default objfun_target="noise" and no noise_alpha, should be diagonal
         expected_diag = var + (1e-3) ** 2  # var + obs_std**2
         assert np.allclose(np.diag(C_eps), expected_diag)
@@ -220,7 +220,7 @@ class TestObservationNoiseCovariance:
         obs_std = 0.5
         C_eps = dataworth_instance.observation_noise_covariance(obs_std=obs_std)
 
-        n_obs = len(dataworth_instance.ml.observations())
+        _ = len(dataworth_instance.ml.observations())
         # Should be diagonal matrix
         off_diag_sum = np.sum(np.abs(C_eps)) - np.sum(np.abs(np.diag(C_eps)))
         assert np.isclose(off_diag_sum, 0.0)

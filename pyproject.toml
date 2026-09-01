@@ -45,7 +45,7 @@ pest = ["pyemu>=1.3.8", "tqdm"]
 reservoirs = ["pastas_plugins"] # placeholder for empty dependencies
 responses = ["pastas_plugins"] # placeholder for empty dependencies
 dataworth = ["scipy", "matplotlib", "tqdm"]
-ruffing = ["ruff"]
+ruffing = ["ruff<0.16.0"]
 pytesting = ["pytest>=7", "pytest-cov", "pytest-sugar"]
 ci = ["coverage"]
 rtd = [
