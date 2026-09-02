@@ -4,6 +4,7 @@ import pastas as ps
 from pastas_plugins.modflow.modflow import (
     ModflowDrn,
     ModflowDrnSto,
+    ModflowGhb,
     ModflowRch,
     ModflowSto,
     ModflowUzf,
