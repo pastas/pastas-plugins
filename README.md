@@ -13,6 +13,7 @@ The following plugins are now available:
 - **`reservoirs`**: use reservoir models to simulate time series.
 - **`responses`**: custom response functions for Pastas.
 - **`pest`**: PEST(++) solver for Pastas.
+- **`dataworth`**: data worth and visualization tools.
 
 ## Installation
 
@@ -46,8 +47,8 @@ import pastas_plugins as pp
 This gives you access to the following functions:
 
 ```python
-pp.list_plugins()         # list of all plugins
-pp.show_plugin_versions() # show plugin versions
+pp.list_plugins()  # list of all plugins
+pp.show_plugin_versions()  # show plugin versions
 ```
 
 The function `pp.show_plugin_versions()` will indicate if any dependencies are missing

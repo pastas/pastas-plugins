@@ -145,12 +145,24 @@ class ModflowModel(StressModelBase):
     def nparam(self) -> int:
         """Number of parameters.
 
-        Returns
-        -------
-        int
-            Total number of calibration parameters.
-        """
-        return len(self.parameters)
+        for pack in package:
+            if pack._name in self._packages:
+                logger.warning(f"Package {pack._name} already exists. Overwriting it.")
+            self._packages[pack._name] = pack
+            pack_stress = pack.stress()
+            if pack_stress is not None:
+                # make sure the stresses are in the right time range
+                for stress_name, stress_series in pack_stress.items():
+                    ts = TimeSeries(stress_series, settings=stress_name)
+                    ts.update_series(
+                        tmin=self.tmin, tmax=self.tmax, freq=self.model.settings["freq"]
+                    )
+                    setattr(pack, stress_name, ts.series)
+
+        self.set_init_parameters()
+        self.model.add_stressmodel(
+            self, replace=True
+        )  # add as stressmodel to pastas model
 
     @property
     def package_parameter_names(self) -> dict[str, list[str]]:

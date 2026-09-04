@@ -34,7 +34,7 @@ def kraijenhoff_parameters(
     return A, a, b
 
 
-def exponential_parameters(S: float, c: float, N: 1.0) -> tuple[float]:
+def exponential_parameters(S: float, c: float, N: float = 1.0) -> tuple[float]:
     """Get Pastas parameters for an Exponential response for a linear
     reservoir system.
 
@@ -72,9 +72,9 @@ def hantush_parameters(
     D : float
         The saturated thickness of the aquifer [L].
     c : float
-        The drainage resistance [T].
+        The aquitard resistance [T].
     r : float
-        The distance from the well resistance [L].
+        The distance from the well [L].
     Q : float
         The discharge of the well [L].
 
