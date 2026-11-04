@@ -41,7 +41,7 @@ all = [
         "pastas_plugins[crosscorrelation,modflow,pest,responses,reservoirs,dataworth]",
 ]
 crosscorrelation = ["statsmodels"]
-modflow = ["flopy"]
+modflow = ["flopy", "modflowapi"]
 pest = ["pyemu>=1.3.8", "tqdm"]
 reservoirs = ["pastas_plugins"] # placeholder for empty dependencies
 responses = ["pastas_plugins"] # placeholder for empty dependencies
