@@ -67,7 +67,7 @@ class ReservoirModel(StressModelBase):
                 "indices of the time series overlap."
             )
             # logger.error(msg)
-            raise Exception(msg)
+            raise ValueError(msg)
 
         # First check the series, then determine tmin and tmax
         stress0.update_series(tmin=index.min(), tmax=index.max())
@@ -137,9 +137,7 @@ class ReservoirModel(StressModelBase):
             dictionary with all necessary information to reconstruct the
             StressModel object.
         """
-        pass
 
     def _get_block(self, p, dt, tmin, tmax):
         """Internal method to get the block-response function.
         Cannot be used (yet?) since there is no block response"""
-        pass

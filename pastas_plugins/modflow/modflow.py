@@ -207,9 +207,7 @@ class ModflowPkgLoggerMixin:
         """
         if not logger.isEnabledFor(level):
             return
-        pdict = {
-            ipar: self.api.get_value(mf6, ipar) for ipar in self.api.parameters.keys()
-        }
+        pdict = {ipar: self.api.get_value(mf6, ipar) for ipar in self.api.parameters}
         msg = f"kper={kper}, {self._name}: " + ", ".join(
             f"{k}={v}" for k, v in pdict.items()
         )
@@ -323,7 +321,7 @@ class ModflowDis(ModflowPkgLoggerMixin):
         -------
         None
         """
-        return None
+        return
 
 
 class ModflowIc(ModflowPkgLoggerMixin):
@@ -416,7 +414,7 @@ class ModflowIc(ModflowPkgLoggerMixin):
         -------
         None
         """
-        return None
+        return
 
 
 class ModflowStoConfined(ModflowPkgLoggerMixin):
@@ -521,7 +519,7 @@ class ModflowStoConfined(ModflowPkgLoggerMixin):
         -------
         None
         """
-        return None
+        return
 
 
 class ModflowStoPhreatic(ModflowStoConfined):
@@ -731,7 +729,7 @@ class ModflowGhb(ModflowPkgLoggerMixin):
         -------
         None
         """
-        return None
+        return
 
 
 class ModflowRch(ModflowPkgLoggerMixin):
@@ -1189,6 +1187,7 @@ class ModflowUzf(ModflowPkgLoggerMixin):
             ``(H, vks, thtr, thts, thextfrac, eps, extdpfrac)``.
         """
         H, vks, thtr, thts, thextfrac, eps, extdpfrac = p
+        _ = H, thextfrac, extdpfrac  # unused here
         thti = (thts + thtr) / 2
 
         # Resolve pointers for all registered UZF and companion DRN parameters
@@ -1247,6 +1246,7 @@ class ModflowUzf(ModflowPkgLoggerMixin):
             ``(H, vks, thtr, thts, thextfrac, eps, extdpfrac)``.
         """
         H, vks, thtr, thts, thextfrac, eps, extdpfrac = p
+        _ = vks, eps  # unused here
         extdp = extdpfrac * H
         thext = thtr + (thts - thtr) * thextfrac
         # SPECIAL: period-data arrays reset by uzf_rp at kper=0 from file.
@@ -1361,7 +1361,7 @@ class ModflowDrn(ModflowPkgLoggerMixin):
         params : tuple of float
             ``(H, C)`` — elevation fraction and conductance.
         """
-        H, C = params
+        _H, C = params
         # H is used to compute top of aquifer, use that value as drain elevation.
         # CROSS-PACKAGE READ: requires ModflowDis.update_parameters() to have
         # run first so that DIS/TOP already holds calibrated value.
@@ -1377,7 +1377,7 @@ class ModflowDrn(ModflowPkgLoggerMixin):
         -------
         None
         """
-        return None
+        return
 
 
 def fast_write_ts(

@@ -3,7 +3,7 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-# ruff: noqa: F401, E402
+# ruff: noqa: F401
 import os
 import sys
 

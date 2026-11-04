@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal
 
 import numpy as np
 from pandas import DataFrame, Series
@@ -69,7 +69,7 @@ class Theis(RfuncBase):
 
         return parameters
 
-    def get_tmax(self, p: ArrayLike, cutoff: Optional[float] = None) -> float:
+    def get_tmax(self, p: ArrayLike, cutoff: float | None = None) -> float:
         if cutoff is None:
             cutoff = self.cutoff
         return -p[1] * np.log(1 - cutoff)
@@ -82,8 +82,8 @@ class Theis(RfuncBase):
         self,
         p: ArrayLike,
         dt: float = 1.0,
-        cutoff: Optional[float] = None,
-        maxtmax: Optional[int] = None,
+        cutoff: float | None = None,
+        maxtmax: int | None = None,
     ) -> ArrayLike:
         t = self.get_t(p=p, dt=dt, cutoff=cutoff, maxtmax=maxtmax)
         # A = Q / (4 * np.pi * T)
