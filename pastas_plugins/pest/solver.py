@@ -17,7 +17,7 @@ import pandas as pd
 import pyemu
 from numpy.typing import NDArray
 from pandas import DataFrame
-from pastas.solver import BaseSolver
+from pastas.solver.base import SolverBase
 from pastas.typing import ArrayLike, Model
 from scipy.optimize import OptimizeResult, minimize
 from scipy.optimize._numdiff import approx_derivative
@@ -28,6 +28,52 @@ from tqdm.contrib.concurrent import process_map
 logger = getLogger(__name__)
 
 TimestampType: TypeAlias = pd.Timestamp | str
+
+
+def _fit_report(solver: SolverBase, full_output: bool = False, **kwargs) -> str:
+    """Build a fit report string for a plugin solver.
+
+    Parameters
+    ----------
+    solver : pastas.solver.base.SolverBase
+        The solver instance for which to build the report.
+    full_output : bool, optional
+        If True, also show the standard errors of the parameters.
+    **kwargs : dict
+        Additional keyword arguments are ignored.
+
+    Returns
+    -------
+    report: str
+        String with the report.
+    """
+    _ = kwargs
+    ml = solver.model
+    nfev = getattr(solver, "nfev", None)
+    obj_func = getattr(solver, "obj_func", None)
+    model_info = {
+        "nfev": nfev if nfev is not None else 0,
+        "nobs": ml.observations().index.size,
+        "noise": str(bool(ml.noisemodel)),
+        "tmin": str(ml.settings["tmin"]),
+        "tmax": str(ml.settings["tmax"]),
+        "freq": ml.settings["freq"],
+        "warmup": str(ml.settings["warmup"]),
+        "solver": solver._name,
+        "objective": obj_func if obj_func is not None else np.nan,
+    }
+    df = ml.parameters.copy()
+    if not full_output and "stderr" in df.columns:
+        df = df.drop(columns="stderr")
+    report = (
+        "Model information\n"
+        + pd.DataFrame.from_dict(
+            model_info, orient="index", columns=["value"]
+        ).to_string()
+        + "\n\nParameters\n"
+        + df.to_string()
+    )
+    return report
 
 
 def run() -> None:
@@ -100,11 +146,12 @@ def run_pypestworker(
             break
 
 
-class PestSolver(BaseSolver):
+class PestSolver(SolverBase):
     """PEST solver base class"""
 
     def __init__(
         self,
+        model: Model,
         exe_name: str | Path,
         model_ws: str | Path = Path("model"),
         temp_ws: str | Path = Path("temp"),
@@ -121,6 +168,8 @@ class PestSolver(BaseSolver):
 
         Parameters
         ----------
+        model : pastas.Model
+            The Pastas Model instance to which the solver is attached.
         exe_name : str | Path
             The name or path to the PEST executable.
         model_ws : str | Path, optional
@@ -142,13 +191,16 @@ class PestSolver(BaseSolver):
         use_pypestworker : bool, optional
             Whether to use the PyPestWorker for Python processing. Default is True.
         **kwargs : dict
-            Additional keyword arguments passed to the BaseSolver.
+            Additional keyword arguments passed to the SolverBase.
 
         Returns
         -------
         None
         """
-        BaseSolver.__init__(self, pcov=pcov, nfev=nfev, **kwargs)
+        super().__init__(model=model, **kwargs)
+        self.pcov: DataFrame | None = pcov
+        self.nfev: int | None = nfev
+        self.obj_func: float | None = None
         # model workspace (for pastas files)
         self.model_ws = Path(model_ws).resolve()
         if not self.model_ws.exists():
@@ -173,7 +225,7 @@ class PestSolver(BaseSolver):
     def setup_model(self):
         """Setup and export Pastas model for PEST optimization"""
         # observations
-        observations = self.ml.observations()
+        observations = self.model.observations()
         observations.name = "Observations"
         observations.index.name = "Datetime"
         observations.to_csv(self.model_ws / "simulation.csv")
@@ -181,11 +233,11 @@ class PestSolver(BaseSolver):
         self.observations = observations
 
         # setup parameters
-        for pname, val in self.ml.parameters["initial"].items():
-            self.ml.set_parameter(pname, optimal=val)
+        for pname, val in self.model.parameters["initial"].items():
+            self.model.set_parameter(pname, optimal=val)
 
-        self.vary = self.ml.parameters.loc[:, "vary"].to_numpy(dtype=bool, copy=True)
-        parameters = self.ml.parameters[self.vary].copy()
+        self.vary = self.model.parameters.loc[:, "vary"].to_numpy(dtype=bool, copy=True)
+        parameters = self.model.parameters[self.vary].copy()
         parameters.index = pd.Index(
             [
                 p.replace("_A", "_g") if p.endswith("_A") else p
@@ -195,16 +247,16 @@ class PestSolver(BaseSolver):
         )
         if "constant_d" in parameters.index:
             if np.isnan(parameters.at["constant_d", "pmin"]):
-                self.ml.set_parameter(
+                self.model.set_parameter(
                     "constant_d",
                     pmin=np.min(observations.values) - np.std(observations.values),
                 )
             if np.isnan(parameters.at["constant_d", "pmax"]):
-                self.ml.set_parameter(
+                self.model.set_parameter(
                     "constant_d",
                     pmax=np.max(observations.values) + np.std(observations.values),
                 )
-        if self.ml.parameters.index.str.rsplit("_").str[0].str.isupper().any():
+        if self.model.parameters.index.str.rsplit("_").str[0].str.isupper().any():
             logger.error(
                 "pestpp is case insensitive so any capitalized parameters (stress model names) can cause issues in the solver."
             )
@@ -213,7 +265,7 @@ class PestSolver(BaseSolver):
         copy_file(self.model_ws / "parameters_sel.csv", self.temp_ws)
 
         # model
-        self.ml.to_file(self.model_ws / "model.pas")
+        self.model.to_file(self.model_ws / "model.pas")
         copy_file(self.model_ws / "model.pas", self.temp_ws)
 
     def write_pst(self, pst: pyemu.Pst, version: int = 2) -> None:
@@ -238,17 +290,17 @@ class PestSolver(BaseSolver):
         """
 
         # parameters
-        pmin = self.ml.parameters.loc[self.vary, "pmin"].to_numpy(
+        pmin = self.model.parameters.loc[self.vary, "pmin"].to_numpy(
             dtype=float, copy=True
         )
-        pmax = self.ml.parameters.loc[self.vary, "pmax"].to_numpy(
+        pmax = self.model.parameters.loc[self.vary, "pmax"].to_numpy(
             dtype=float, copy=True
         )
-        pini = self.ml.parameters.loc[self.vary, "initial"].to_numpy(
+        pini = self.model.parameters.loc[self.vary, "initial"].to_numpy(
             dtype=float, copy=True
         )
         pargp = (
-            self.ml.parameters.loc[self.vary, "name"]
+            self.model.parameters.loc[self.vary, "name"]
             .to_numpy(dtype=str, copy=True)
             .tolist()
         )
@@ -301,12 +353,12 @@ class PestSolver(BaseSolver):
 
         # save parameter and observation index for going back and forth between pastas and pest names
         self.parameter_index = dict(
-            zip(pst.parameter_data.index, self.ml.parameters[self.vary].index)
+            zip(pst.parameter_data.index, self.model.parameters[self.vary].index)
         )
         with (self.temp_ws / "parameter_index.json").open("w") as f:
             json.dump(obj=self.parameter_index, fp=f, default=str)
         self.observation_index = dict(
-            zip(pst.observation_data.index, self.ml.observations().index)
+            zip(pst.observation_data.index, self.model.observations().index)
         )
         with (self.temp_ws / "observation_index.json").open("w") as f:
             json.dump(obj=self.observation_index, fp=f, default=str)
@@ -318,7 +370,7 @@ class PestSolver(BaseSolver):
 
     def initialize(self, version: int = 2) -> None:
         """Initialize the solver by setting up the model and files."""
-        if self.ml is None:
+        if self.model is None:
             raise ValueError("No Pastas model assigned to the solver.")
         if self.pf.pst is None:
             self.setup_model()
@@ -343,12 +395,30 @@ class PestSolver(BaseSolver):
         """
         pyemu.utils.get_pestpp(str(path), subset=subset, force=True)
 
+    def fit_report(self, full_output: bool = False, **kwargs) -> str:
+        """Report on the fit after the model is optimized.
+
+        Parameters
+        ----------
+        full_output : bool, optional
+            If True, also show the standard errors of the parameters.
+        **kwargs : dict
+            Additional keyword arguments are ignored.
+
+        Returns
+        -------
+        report: str
+            String with the report.
+        """
+        return _fit_report(self, full_output=full_output, **kwargs)
+
 
 class PestGlmSolver(PestSolver):
     """PESTPP-GLM (Gauss-Levenberg-Marquardt) solver"""
 
     def __init__(
         self,
+        model: Model,
         exe_name: str | Path = "pestpp-glm",
         model_ws: str | Path = Path("model"),
         temp_ws: str | Path = Path("temp"),
@@ -366,6 +436,8 @@ class PestGlmSolver(PestSolver):
 
         Parameters
         ----------
+        model : pastas.Model
+            The Pastas Model instance to which the solver is attached.
         exe_name : str | Path, optional
             The name or path to the PESTPP-GLM executable. Default is "pestpp-glm".
         model_ws : str | Path, optional
@@ -393,6 +465,7 @@ class PestGlmSolver(PestSolver):
         """
         PestSolver.__init__(
             self,
+            model=model,
             exe_name=exe_name,
             model_ws=model_ws,
             temp_ws=temp_ws,
@@ -407,7 +480,7 @@ class PestGlmSolver(PestSolver):
         )
         self.num_workers = cpu_count() if num_workers is None else num_workers
 
-    def solve(self, **kwargs) -> tuple[bool, NDArray[np.float64], NDArray[np.float64]]:
+    def solve(self, **kwargs) -> tuple[bool, DataFrame]:
         """
         Solves the optimization problem using the pestpp-glm solver.
         This method sets up the model and necessary files, runs the solver, and
@@ -423,10 +496,9 @@ class PestGlmSolver(PestSolver):
         -------
         success : bool
             Indicates whether the solver ran successfully.
-        optimal : NDArray[np.float64]
-            The optimal parameters obtained from the solver.
-        stderr : NDArray[np.float64]
-            The standard errors of the optimal parameters.
+        result : pandas.DataFrame
+            DataFrame with the optimal parameters and their standard errors,
+            indexed by the model parameter names.
         """
 
         self.initialize(version=2)
@@ -442,15 +514,15 @@ class PestGlmSolver(PestSolver):
                 master_dir=self.temp_ws,  # the manager directory
                 reuse_master=self.use_pypestworker,
                 ppw_function=self.ppw_function,
-                ppw_kwargs={"ml": self.ml},
+                ppw_kwargs={"ml": self.model},
             )
         else:
             self.run()
 
         # optimal parameters
         ipar = pd.read_csv(self.temp_ws / "pest.ipar", index_col=0).transpose()
-        ipar.index = self.ml.parameters.index[self.vary]
-        optimal = self.ml.parameters["initial"].to_numpy(dtype=float, copy=True)
+        ipar.index = self.model.parameters.index[self.vary]
+        optimal = self.model.parameters["initial"].to_numpy(dtype=float, copy=True)
         self.nfev = ipar.columns[-1]
         optimal[self.vary] = ipar.loc[:, self.nfev].to_numpy(dtype=float, copy=True)
 
@@ -496,7 +568,12 @@ class PestGlmSolver(PestSolver):
         iobj = pd.read_csv(self.temp_ws / "pest.iobj", index_col=0)
         self.obj_func = iobj.at[self.nfev, "total_phi"]
         success = True  # always :)
-        return success, optimal, stderr
+        result = DataFrame(
+            {"optimal": optimal, "stderr": stderr},
+            index=self.model.parameters.index,
+            dtype=float,
+        )
+        return success, result
 
 
 class PestHpSolver(PestSolver):
@@ -504,6 +581,7 @@ class PestHpSolver(PestSolver):
 
     def __init__(
         self,
+        model: Model,
         exe_name: str | Path = "pest_hp",
         exe_agent: str | Path = "agent_hp",
         model_ws: str | Path = Path("model"),
@@ -520,6 +598,8 @@ class PestHpSolver(PestSolver):
 
         Parameters
         ----------
+        model : pastas.Model
+            The Pastas Model instance to which the solver is attached.
         exe_name : str | Path, optional
             The name or path to the PEST_HP executable. Default is "pest_hp".
         exe_agent : str | Path, optional
@@ -547,6 +627,7 @@ class PestHpSolver(PestSolver):
         """
         PestSolver.__init__(
             self,
+            model=model,
             exe_name=exe_name,
             model_ws=model_ws,
             temp_ws=temp_ws,
@@ -563,9 +644,7 @@ class PestHpSolver(PestSolver):
         self.computername = get_computername()
         copy_file(self.exe_agent, self.temp_ws)  # copy agent executable
 
-    def solve(
-        self, silent: bool = False, **kwargs
-    ) -> tuple[bool, NDArray[np.float64], NDArray[np.float64]]:
+    def solve(self, silent: bool = False, **kwargs) -> tuple[bool, DataFrame]:
         """
         Solve the optimization problem using the pest_hp solver.
 
@@ -581,10 +660,9 @@ class PestHpSolver(PestSolver):
         -------
         success : bool
             Indicates whether the solver ran successfully.
-        optimal : NDArray[np.float64]
-            The optimal parameters obtained from the solver.
-        stderr : NDArray[np.float64]
-            The standard errors of the optimal parameters.
+        result : pandas.DataFrame
+            DataFrame with the optimal parameters and their standard errors,
+            indexed by the model parameter names.
         """
         self.initialize(version=1)
         # start consecutive thread for pest_hp and agent_hp excutable
@@ -605,8 +683,8 @@ class PestHpSolver(PestSolver):
             skiprows=[0],
             header=None,
         )
-        par.index = self.ml.parameters.index[self.vary]
-        optimal = self.ml.parameters["initial"].copy().values
+        par.index = self.model.parameters.index[self.vary]
+        optimal = self.model.parameters["initial"].copy().values
         optimal[self.vary] = par.iloc[:, 0].values
 
         ofr = pd.read_csv(
@@ -617,7 +695,12 @@ class PestHpSolver(PestSolver):
 
         # TODO: Obtain stderror from pest.hp output and covariance matrix
         stderr = np.full_like(optimal, np.nan)
-        return True, optimal, stderr
+        result = DataFrame(
+            {"optimal": optimal, "stderr": stderr},
+            index=self.model.parameters.index,
+            dtype=float,
+        )
+        return True, result
 
     def run_agent(self, silent: bool = False) -> None:
         """
@@ -639,6 +722,7 @@ class PestIesSolver(PestSolver):
 
     def __init__(
         self,
+        model: Model,
         exe_name: str | Path = "pestpp-ies",
         model_ws: str | Path = Path("model"),
         temp_ws: str | Path = Path("temp"),
@@ -658,6 +742,8 @@ class PestIesSolver(PestSolver):
 
         Parameters
         ----------
+        model : pastas.Model
+            The Pastas Model instance to which the solver is attached.
         exe_name : str | Path, optional
             The name of the executable to run, by default "pestpp-ies".
         model_ws : str | Path, optional
@@ -693,6 +779,7 @@ class PestIesSolver(PestSolver):
 
         PestSolver.__init__(
             self,
+            model=model,
             exe_name=exe_name,
             model_ws=model_ws,
             temp_ws=temp_ws,
@@ -794,7 +881,7 @@ class PestIesSolver(PestSolver):
             ppw_function=self.ppw_function
             if self.use_pypestworker
             else None,  # the function to run in the agent
-            ppw_kwargs={"ml": self.ml}
+            ppw_kwargs={"ml": self.model}
             if self.use_pypestworker
             else {},  # the arguments to pass to the ppw_function
         )
@@ -1077,18 +1164,18 @@ class PestIesSolver(PestSolver):
                     pst=pst, filename=self.master_ws / f"pest.{iteration}.obs.csv"
                 )
                 .transpose()
-                .set_index(self.ml.observations().index)
+                .set_index(self.model.observations().index)
             )
         else:
             ipar = self.parameter_ensemble(iteration=iteration).transpose()
-            ipar.index = self.ml.parameters.index[self.vary]
+            ipar.index = self.model.parameters.index[self.vary]
 
-            tmin = self.ml.settings["tmin"] if tmin is None else pd.Timestamp(tmin)
-            tmax = self.ml.settings["tmax"] if tmax is None else pd.Timestamp(tmax)
+            tmin = self.model.settings["tmin"] if tmin is None else pd.Timestamp(tmin)
+            tmax = self.model.settings["tmax"] if tmax is None else pd.Timestamp(tmax)
             freq = (
                 "D"
-                if self.ml.settings["freq"] is not None
-                else self.ml.settings["freq"]
+                if self.model.settings["freq"] is not None
+                else self.model.settings["freq"]
             )
             se = pd.DataFrame(
                 np.nan,
@@ -1098,9 +1185,9 @@ class PestIesSolver(PestSolver):
 
             for idx in ipar.columns:
                 for ix in idx:
-                    self.ml.set_parameter(ix, optimal=ipar.at[ix, idx])
+                    self.model.set_parameter(ix, optimal=ipar.at[ix, idx])
                 se.loc[:, idx] = (
-                    self.ml.simulate(tmin=tmin, tmax=tmax).loc[se.index].values
+                    self.model.simulate(tmin=tmin, tmax=tmax).loc[se.index].values
                 )
 
         return se
@@ -1191,9 +1278,7 @@ class PestIesSolver(PestSolver):
         jac = deviations_sim @ np.linalg.pinv(deviations_par)
         return jac
 
-    def solve(
-        self, run_ensembles: bool = False, **kwargs
-    ) -> tuple[bool, NDArray[np.float64], NDArray[np.float64]]:
+    def solve(self, run_ensembles: bool = False, **kwargs) -> tuple[bool, DataFrame]:
         """
         Gets the base realization of the parameter ensemble.
 
@@ -1206,11 +1291,11 @@ class PestIesSolver(PestSolver):
 
         Returns
         -------
-        tuple
-            A tuple containing:
-            - bool: Always returns True.
-            - numpy.ndarray: The optimal parameters.
-            - numpy.ndarray: The standard error of the parameters.
+        success : bool
+            Always returns True.
+        result : pandas.DataFrame
+            DataFrame with the optimal parameters and their standard errors,
+            indexed by the model parameter names.
         """
         kwargs.pop("noise", None)  # remove noise from kwargs, not used in PestIesSolver
         kwargs.pop("weights", None)
@@ -1220,7 +1305,12 @@ class PestIesSolver(PestSolver):
 
         optimal, stderr = self.get_solve_results()
 
-        return True, optimal, stderr
+        result = DataFrame(
+            {"optimal": optimal, "stderr": stderr},
+            index=self.model.parameters.index,
+            dtype=float,
+        )
+        return True, result
 
     def get_solve_results(self) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """
@@ -1236,9 +1326,9 @@ class PestIesSolver(PestSolver):
         ipar = (
             self.parameter_ensemble(iteration=self.nfev)
             .transpose()
-            .rename(index=self.parameters_index)
+            .rename(index=self.parameter_index)
         )
-        optimal = self.ml.parameters["initial"].to_numpy(dtype=float, copy=True)
+        optimal = self.model.parameters["initial"].to_numpy(dtype=float, copy=True)
         optimal[self.vary] = ipar.loc[:, "base"].values
 
         # standard error (could be totally the wrong way to think about/calculate this)
@@ -1253,6 +1343,7 @@ class PestSenSolver(PestSolver):
 
     def __init__(
         self,
+        model: Model,
         exe_name: str | Path = "pestpp-sen",
         model_ws: str | Path = Path("model"),
         temp_ws: str | Path = Path("temp"),
@@ -1272,6 +1363,8 @@ class PestSenSolver(PestSolver):
 
         Parameters
         ----------
+        model : pastas.Model
+            The Pastas Model instance to which the solver is attached.
         exe_name : str | Path, optional
             The name of the executable to run, by default "pestpp-sen".
         model_ws : str | Path, optional
@@ -1304,6 +1397,7 @@ class PestSenSolver(PestSolver):
         """
         PestSolver.__init__(
             self,
+            model=model,
             exe_name=exe_name,
             model_ws=model_ws,
             temp_ws=temp_ws,
@@ -1360,7 +1454,7 @@ class PestSenSolver(PestSolver):
             ppw_function=self.ppw_function
             if self.use_pypestworker
             else None,  # the function to run in the agent
-            ppw_kwargs={"ml": self.ml}
+            ppw_kwargs={"ml": self.model}
             if self.use_pypestworker
             else {},  # the arguments to pass to the ppw_function
         )
@@ -1429,11 +1523,20 @@ class MinimizeTracker:
         )
 
 
-class RandomizedMaximumLikelihoodSolver(BaseSolver):
-    _name = "RandomizedMaximumLikelihoodSolver"
+class RandomizedMaximumLikelihoodSolver(SolverBase):
+    """Randomized Maximum Likelihood solver.
+
+    Parameters
+    ----------
+    model : pastas.Model
+        The Pastas Model instance to which the solver is attached.
+    num_reals : int
+        The number of realizations used to estimate the posterior.
+    """
 
     def __init__(
         self,
+        model: Model,
         num_reals: int,
         jacobian_method: Literal["2-point", "3-point", "empirical"] = "3-point",
         beta: float = 0.5,
@@ -1447,7 +1550,9 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         nfev: int | None = None,
         **kwargs,
     ):
-        super().__init__(pcov=pcov, nfev=nfev, **kwargs)
+        super().__init__(model=model, **kwargs)
+        self.pcov: pd.DataFrame | None = pcov
+        self.nfev: int | None = nfev
         self.num_reals = num_reals
         self.jacobian_method = jacobian_method
         self.beta = beta
@@ -1489,6 +1594,23 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
 
         return data
 
+    def fit_report(self, full_output: bool = False, **kwargs) -> str:
+        """Report on the fit after the model is optimized.
+
+        Parameters
+        ----------
+        full_output : bool, optional
+            If True, also show the standard errors of the parameters.
+        **kwargs : dict
+            Additional keyword arguments are ignored.
+
+        Returns
+        -------
+        report: str
+            String with the report.
+        """
+        return _fit_report(self, full_output=full_output, **kwargs)
+
     def initialize(
         self,
         standard_deviation: float = 0.0,
@@ -1498,7 +1620,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
     ) -> None:
         logger.debug("Initialize: RML solver")
         logger.debug("Initialize: Creating observation noise")
-        observations = self.ml.observations()
+        observations = self.model.observations()
         observation_noise = pd.DataFrame(
             PestIesSolver.generate_observation_noise(
                 ies_num_reals=self.num_reals,
@@ -1517,10 +1639,10 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                 [range(self.num_reals), [0]],
                 names=["real", "iteration"],
             ),
-            columns=self.ml.parameters.index,
+            columns=self.model.parameters.index,
             dtype=float,
         )
-        for pname, pdata in self.ml.parameters.iterrows():
+        for pname, pdata in self.model.parameters.iterrows():
             rvs = PestIesSolver.parameter_distribution(
                 ies_num_reals=self.num_reals,
                 initial=pdata.at["initial"],
@@ -1534,8 +1656,8 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
             np.random.default_rng(seed=self.seed).permuted(
                 parameter_data.values, axis=0
             ),
-            self.ml.parameters.loc[:, "pmin"].to_numpy(dtype=float, copy=True),
-            self.ml.parameters.loc[:, "pmax"].to_numpy(dtype=float, copy=True),
+            self.model.parameters.loc[:, "pmin"].to_numpy(dtype=float, copy=True),
+            self.model.parameters.loc[:, "pmax"].to_numpy(dtype=float, copy=True),
         )
         if self.add_base:
             logger.debug("Initialize: Adding base realization")
@@ -1543,7 +1665,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
             observation_noise.loc[:, base_idx] = 0.0
             observation_noise = observation_noise.rename(columns={base_idx: "base"})
 
-            parameter_data.loc[base_idx, :] = self.ml.parameters.loc[
+            parameter_data.loc[base_idx, :] = self.model.parameters.loc[
                 :, "initial"
             ].to_numpy(dtype=float, copy=True)
             parameter_data = parameter_data.rename(index={base_idx: "base"})
@@ -1565,13 +1687,13 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
     @property
     def observation_ensemble(self) -> pd.DataFrame:
         """Generate the observation ensemble by adding noise to model observations."""
-        obs = self.ml.observations().values
+        obs = self.model.observations().values
         noise = self.observation_noise.values.T
 
         obs_df = pd.DataFrame(
             noise + obs,
             index=self.observation_noise.columns,
-            columns=self.ml.observations().index,
+            columns=self.model.observations().index,
         ).T
         return obs_df
 
@@ -1726,8 +1848,17 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
         p = parameter_ensemble.iloc[real].values
         return ml.simulate(p=p).rename(real)
 
-    def solve(self, **kwargs) -> tuple[bool, pd.Series, None]:
-        """Solve the RML problem using least squares optimization."""
+    def solve(self, **kwargs) -> tuple[bool, DataFrame]:
+        """Solve the RML problem using least squares optimization.
+
+        Returns
+        -------
+        success : bool
+            Indicates whether the optimization converged.
+        result : pandas.DataFrame
+            DataFrame with the optimal parameters and their standard errors,
+            indexed by the model parameter names.
+        """
 
         if "noise" in kwargs:
             _ = kwargs.pop("noise")
@@ -1746,7 +1877,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                 "noptmax is not set. Setting noptmax to 100 times"
                 "the number of variable parameters for solve method."
             )
-            self.noptmax = 100 * np.sum(self.ml.parameters.loc[:, "vary"])
+            self.noptmax = 100 * np.sum(self.model.parameters.loc[:, "vary"])
 
         if self.jacobian_method in ("2-point", "3-point"):
             func = partial(
@@ -1754,7 +1885,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                 parameter_ensemble=self.parameter_ensemble,
                 parameter_ensemble_prior=self.parameter_ensemble_prior,
                 observation_ensemble=self.observation_ensemble,
-                ml=self.ml,
+                ml=self.model,
                 jacobian_method=self.jacobian_method,
                 beta=self.beta,
                 minimize_method=self.minimize_method,
@@ -1804,7 +1935,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                         RandomizedMaximumLikelihoodSolver._simulate,
                         r,
                         self.parameter_ensemble_posterior,
-                        self.ml,
+                        self.model,
                     )
                     for r in range(self.num_reals)
                 ]
@@ -1822,7 +1953,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                     [range(self.num_reals), range(self.noptmax + 1)],
                     names=["real", "iteration"],
                 ),
-                columns=self.ml.parameters.index,
+                columns=self.model.parameters.index,
                 dtype=float,
             )
             parameter_ensemble_0 = self.parameter_ensemble_prior.copy()
@@ -1838,7 +1969,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                             RandomizedMaximumLikelihoodSolver._simulate,
                             r,
                             parameter_ensemble_i,
-                            self.ml,
+                            self.model,
                         )
                         for r in range(self.num_reals)
                     ]
@@ -1878,7 +2009,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
                         simulations=simulations,
                         parameter_ensemble=parameter_ensemble_i,
                         observation_ensemble=self.observation_ensemble,
-                        ml=self.ml,
+                        ml=self.model,
                         jacobian=jacobian,
                     )
                 )
@@ -1949,4 +2080,9 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
             if hasattr(self, "convergence_ensemble")
             else True
         )
-        return convergence, optimal, stderr
+        result = DataFrame(
+            {"optimal": optimal, "stderr": stderr},
+            index=self.model.parameters.index,
+            dtype=float,
+        )
+        return convergence, result

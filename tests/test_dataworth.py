@@ -45,8 +45,7 @@ def simple_pastas_model():
 
     # Create model
     ml = ps.Model(observations, name="test_ml")
-    rm = ps.RechargeModel(prec, evap, name="rch", rfunc=ps.Gamma())
-    ml.add_stressmodel(rm)
+    ps.RechargeModel(ml, prec, evap, name="rch", rfunc=ps.Gamma())
 
     # Add a constant parameter
     ml.set_parameter(
@@ -57,7 +56,7 @@ def simple_pastas_model():
     )
 
     # Add a simple noise model to avoid noise calculation issues
-    ml.add_noisemodel(ps.ArNoiseModel())
+    ps.ArNoiseModel(ml)
 
     # Solve the model to get a Jacobian
     ml.solve(tmin=index[0], tmax=index[-1], report=False)
@@ -102,14 +101,13 @@ def calibrated_pastas_model():
     ml = ps.Model(observations, name="calibrated_ml")
 
     # Add stress model
-    rm = ps.RechargeModel(prec, evap, name="rch", rfunc=ps.Gamma())
-    ml.add_stressmodel(rm)
+    ps.RechargeModel(ml, prec, evap, name="rch", rfunc=ps.Gamma())
 
     # Add constant
     ml.set_parameter("constant_d", initial=100)
 
     # Add noise model
-    ml.add_noisemodel(ps.ArNoiseModel())
+    ps.ArNoiseModel(ml)
 
     # Solve the model
     ml.solve(tmin=index[0], tmax=index[-1], report=False)
@@ -146,7 +144,7 @@ class TestDataWorthInitialization:
         """Test DataWorth initialization with only a model."""
         dw = DataWorth(simple_pastas_model)
 
-        assert dw.ml is simple_pastas_model
+        assert dw.model is simple_pastas_model
         assert dw.J0 is not None
         assert dw.J0.shape[0] == len(simple_pastas_model.observations())
         assert dw.J0.shape[1] == len(simple_pastas_model.parameters)
@@ -160,7 +158,7 @@ class TestDataWorthInitialization:
 
         dw = DataWorth(simple_pastas_model, J=J)
 
-        assert dw.ml is simple_pastas_model
+        assert dw.model is simple_pastas_model
         assert dw.J0 is J
         assert dw.objfun_target == "noise"
 
@@ -194,13 +192,13 @@ class TestObservationNoiseCovariance:
         """Test observation noise covariance with default parameters."""
         C_eps = dataworth_instance.observation_noise_covariance()
 
-        n_obs = len(dataworth_instance.ml.observations())
+        n_obs = len(dataworth_instance.model.observations())
         assert C_eps.shape == (n_obs, n_obs)
         assert isinstance(C_eps, np.ndarray)
 
     def test_covariance_with_obs(self, dataworth_instance):
         """Test observation noise covariance with explicit observations."""
-        obs = dataworth_instance.ml.observations().iloc[:50]
+        obs = dataworth_instance.model.observations().iloc[:50]
         C_eps = dataworth_instance.observation_noise_covariance(obs=obs)
 
         assert C_eps.shape == (50, 50)
@@ -210,7 +208,7 @@ class TestObservationNoiseCovariance:
         var = 2.5
         C_eps = dataworth_instance.observation_noise_covariance(var=var)
 
-        _ = len(dataworth_instance.ml.observations())
+        _ = len(dataworth_instance.model.observations())
         # With default objfun_target="noise" and no noise_alpha, should be diagonal
         expected_diag = var + (1e-3) ** 2  # var + obs_std**2
         assert np.allclose(np.diag(C_eps), expected_diag)
@@ -220,7 +218,7 @@ class TestObservationNoiseCovariance:
         obs_std = 0.5
         C_eps = dataworth_instance.observation_noise_covariance(obs_std=obs_std)
 
-        _ = len(dataworth_instance.ml.observations())
+        _ = len(dataworth_instance.model.observations())
         # Should be diagonal matrix
         off_diag_sum = np.sum(np.abs(C_eps)) - np.sum(np.abs(np.diag(C_eps)))
         assert np.isclose(off_diag_sum, 0.0)
@@ -373,11 +371,11 @@ class TestDataWorthMethods:
 
         assert isinstance(logdet, float)
         assert isinstance(var_params, np.ndarray)
-        assert var_params.size == len(dataworth_instance.ml.parameters)
+        assert var_params.size == len(dataworth_instance.model.parameters)
 
     def test_data_worth_with_mask(self, dataworth_instance):
         """Test data worth computation with mask."""
-        n_obs = len(dataworth_instance.ml.observations())
+        n_obs = len(dataworth_instance.model.observations())
         mask = np.ones(n_obs, dtype=bool)
         mask[:10] = False  # Exclude first 10 observations
 
@@ -394,9 +392,11 @@ class TestDataWorthPerObservation:
         """Test data worth per observation returns correct shape."""
         df = dataworth_instance.data_worth_per_observation()
 
-        n_obs = len(dataworth_instance.ml.observations())
+        n_obs = len(dataworth_instance.model.observations())
         n_params_vary = len(
-            dataworth_instance.ml.parameters[dataworth_instance.ml.parameters["vary"]]
+            dataworth_instance.model.parameters[
+                dataworth_instance.model.parameters["vary"]
+            ]
         )
 
         assert df.shape[0] == n_obs
@@ -414,8 +414,8 @@ class TestDataWorthPerObservation:
         )  # Either "Δlogdet" or "Increase in gen. std. err. (%)"
 
         # Remaining columns should be for varying parameters
-        varying_params = dataworth_instance.ml.parameters[
-            dataworth_instance.ml.parameters["vary"]
+        varying_params = dataworth_instance.model.parameters[
+            dataworth_instance.model.parameters["vary"]
         ].index
         assert len(df.columns) - 1 == len(varying_params)
 
@@ -423,7 +423,7 @@ class TestDataWorthPerObservation:
         """Test data worth per observation with as_percentage=True."""
         df = dataworth_instance.data_worth_per_observation(as_percentage=True)
 
-        n_obs = len(dataworth_instance.ml.observations())
+        n_obs = len(dataworth_instance.model.observations())
         assert df.shape[0] == n_obs
 
         # When as_percentage=True, first column should be percentage
@@ -433,7 +433,7 @@ class TestDataWorthPerObservation:
         """Test data worth per observation has correct index."""
         df = dataworth_instance.data_worth_per_observation()
 
-        obs_index = dataworth_instance.ml.observations().index
+        obs_index = dataworth_instance.model.observations().index
         assert df.index.equals(obs_index)
 
 
@@ -471,7 +471,7 @@ class TestDataWorthThinning:
         )
 
         # Columns should be all parameters
-        param_names = dataworth_instance.ml.parameters.index
+        param_names = dataworth_instance.model.parameters.index
         assert dw_thinning_per_param.columns.tolist() == param_names.tolist()
 
 
@@ -623,7 +623,7 @@ class TestPlottingFunctions:
         """Test basic plot_data_worth_series functionality."""
         # Get data worth for existing observations
         df = dataworth_instance.data_worth_per_observation()
-        obs = dataworth_instance.ml.observations()
+        obs = dataworth_instance.model.observations()
 
         # This should not raise an exception
         axes = plot_data_worth_series(obs, df)
@@ -689,7 +689,7 @@ class TestEdgeCases:
 
     def test_data_worth_with_empty_mask(self, dataworth_instance):
         """Test data worth computation with empty mask (no observations)."""
-        n_obs = len(dataworth_instance.ml.observations())
+        n_obs = len(dataworth_instance.model.observations())
         mask = np.zeros(n_obs, dtype=bool)
 
         # Should still work, though results may not be meaningful

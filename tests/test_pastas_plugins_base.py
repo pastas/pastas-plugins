@@ -10,9 +10,10 @@ def test_import():
 
 
 def test_show_plugin_versions_with_available_versions(capsys):
-    with patch(
-        "pastas_plugins.list_plugins", return_value=["plugin1", "plugin2"]
-    ) and patch("pastas_plugins.import_module") as mock_import_module:
+    with (
+        patch("pastas_plugins.list_plugins", return_value=["plugin1", "plugin2"]),
+        patch("pastas_plugins.import_module") as mock_import_module,
+    ):
         version_mock_module1 = "1.0.0"
         version_mock_module2 = "2.0.0"
         mock_module1 = MagicMock()
@@ -33,9 +34,10 @@ def test_show_plugin_versions_with_available_versions(capsys):
 
 
 def test_show_plugin_versions_with_missing_dependencies(capsys):
-    with patch("pastas_plugins.list_plugins", return_value=["plugin1"]) and patch(
-        "pastas_plugins.import_module"
-    ) as mock_import_module:
+    with (
+        patch("pastas_plugins.list_plugins", return_value=["plugin1"]),
+        patch("pastas_plugins.import_module") as mock_import_module,
+    ):
         mock_import_module.side_effect = ModuleNotFoundError
 
         show_plugin_versions()

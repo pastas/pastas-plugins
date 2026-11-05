@@ -14,17 +14,25 @@ class Theis(RfuncBase):
     Parameters
     ----------
     cutoff: float, optional
-        The cutoff value of the response function.
+        Fraction of the step response after which the response is truncated.
+        Default is 0.999.
+    use_block: bool, optional
+        Use the block response (rather than the impulse response) to simulate
+        the effect of a stress. Default is True.
     nterms: int, optional
         The number of terms to use in the Theis response function.
     **kwargs
         Any other parameter that is passed to the RfuncBase class.
     """
 
-    _name = "Theis"  # NOTE: temporary fix to allow pastas-plugins to pass tests
-
-    def __init__(self, cutoff: float = 0.999, nterms: int = 10, **kwargs) -> None:
-        RfuncBase.__init__(self, cutoff=cutoff, **kwargs)
+    def __init__(
+        self,
+        cutoff: float = 0.999,
+        use_block: bool = True,
+        nterms: int = 10,
+        **kwargs,
+    ) -> None:
+        super().__init__(cutoff=cutoff, use_block=use_block, **kwargs)
         self.nterms = nterms
 
     @property
@@ -83,9 +91,10 @@ class Theis(RfuncBase):
         p: ArrayLike,
         dt: float = 1.0,
         cutoff: float | None = None,
-        maxtmax: int | None = None,
+        maxtmax: float | None = None,
+        **kwargs,
     ) -> ArrayLike:
-        t = self.get_t(p=p, dt=dt, cutoff=cutoff, maxtmax=maxtmax)
+        t = self.get_t(p=p, dt=dt, cutoff=cutoff, maxtmax=maxtmax, **kwargs)
         # A = Q / (4 * np.pi * T)
         # a = S * L ** 2 / (np.pi ** 2 * T)
         # b = (x - xw) / L with xw = 0
@@ -119,26 +128,20 @@ class Theis(RfuncBase):
             "The moment of the response function is not implemented yet."
         )
 
-    def to_dict(self):
-        """Method to export the response function to a dictionary.
+    def to_dict(self) -> dict:
+        """Export the response function to a dictionary.
 
         Returns
         -------
         data: dict
-            dictionary with all necessary information to reconstruct the rfunc object.
+            dictionary with all necessary settings to reconstruct the rfunc object.
 
         Notes
         -----
-        The exported dictionary should exactly match the input arguments of __init__.
+        The exported dictionary matches the input arguments of `__init__`.
         """
-        data = {
-            "class": self._name,
-            "up": self.up,
-            "gain_scale_factor": self.gain_scale_factor,
-            "cutoff": self.cutoff,
-            # "kind": self.kind,
-            # "t": self.t,
-        }
+        data = super().to_dict()
+        data["nterms"] = self.nterms
         return data
 
 
