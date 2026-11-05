@@ -144,8 +144,16 @@ class ModflowModel(StressModelBase):
     @property
     def nparam(self) -> int:
         """Number of parameters."""
+        return len(self.parameters)
 
-        for pack in self._packages.values():
+    def add_modflow_package(
+        self, package: ModflowPackage | list[ModflowPackage]
+    ) -> None:
+        """Add a Modflow package to the model."""
+        if isinstance(package, ModflowPackage):
+            package = [package]
+
+        for pack in package:
             if pack._name in self._packages:
                 logger.warning(f"Package {pack._name} already exists. Overwriting it.")
             self._packages[pack._name] = pack
