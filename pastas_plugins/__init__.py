@@ -1,4 +1,3 @@
-# ruff : noqa: F401
 import pathlib
 from importlib import import_module
 

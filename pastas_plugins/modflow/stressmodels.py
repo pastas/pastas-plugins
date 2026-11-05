@@ -110,13 +110,13 @@ class ModflowModel(StressModelBase):
         self.sim_ws = sim_ws
         self.raise_on_modflow_error = raise_on_modflow_error
         self.solver_kwargs = (
-            dict(
-                complexity="SIMPLE",
-                outer_dvclose=1e-2,
-                inner_dvclose=1e-2,
-                rcloserecord=1e-1,
-                linear_acceleration="CG",
-            )
+            {
+                "complexity": "SIMPLE",
+                "outer_dvclose": 1e-2,
+                "inner_dvclose": 1e-2,
+                "rcloserecord": 1e-1,
+                "linear_acceleration": "CG",
+            }
             if solver_kwargs is None
             else solver_kwargs
         )
@@ -143,7 +143,15 @@ class ModflowModel(StressModelBase):
 
     @property
     def nparam(self) -> int:
-        """Number of parameters.
+        """Number of parameters."""
+        return len(self.parameters)
+
+    def add_modflow_package(
+        self, package: ModflowPackage | list[ModflowPackage]
+    ) -> None:
+        """Add a Modflow package to the model."""
+        if isinstance(package, ModflowPackage):
+            package = [package]
 
         for pack in package:
             if pack._name in self._packages:
@@ -172,7 +180,7 @@ class ModflowModel(StressModelBase):
         -------
         dict of str to list of str
             Mapping from package name to list of parameter names,
-            excluding ``"modflow_gwf"``.
+            excluding "modflow_gwf".
         """
         sigdict = {
             name: [
@@ -366,9 +374,9 @@ class ModflowModel(StressModelBase):
         elif success and head is None:
             return self._gwf.output.head().get_ts((0, 0, 0))[:, 1]
         else:
-            logger.error("ModflowError: model run failed with parameters: %s" % str(p))
+            logger.error(f"ModflowError: model run failed with parameters: {p!s}")
             if self.raise_on_modflow_error:
-                raise Exception(
+                raise RuntimeError(
                     "Modflow run failed. Check the LIST file for more information."
                 )
             else:
@@ -602,7 +610,7 @@ class ModflowModelApi(ModflowModel):
             ``self.parameters``.
         """
         p_series = Series(p, index=self.parameters.index)
-        for name, package in self._packages.items():
+        for package in self._packages.values():
             pnames = package.parameter_names
             p_dict = {k.rsplit("_", 1)[-1]: v for k, v in p_series.loc[pnames].items()}
             package.update_package(modflow_gwf=self._gwf, **p_dict)
@@ -683,7 +691,7 @@ class ModflowModelApi(ModflowModel):
         """
         p_series = Series(p, index=self.parameters.index)
 
-        for name, package in self._packages.items():
+        for package in self._packages.values():
             # Check if the package defines a time series writer
             if hasattr(package, "update_ts"):
                 # Get the parameter names belonging to this specific package
@@ -714,7 +722,7 @@ class ModflowModelApi(ModflowModel):
         level : int, optional
             Python logging level. Default is ``logging.DEBUG``.
         """
-        for _, package in self._packages.items():
+        for package in self._packages.values():
             if hasattr(package, "log_parameters"):
                 package.log_parameters(mf6, kper, level=level)
 
@@ -732,7 +740,7 @@ class ModflowModelApi(ModflowModel):
         tuple of (bool, np.ndarray)
             ``(success, head)`` where ``success`` is ``True`` if all
             time steps converged and ``head`` is a 1-D array of
-            simulated heads per stress period.
+            simulated heads per `stress period.
         """
         p_series = Series(p, index=self.parameters.index)
         logger.info(
@@ -825,21 +833,21 @@ class ModflowModelApi(ModflowModel):
         return success, head
 
 
-solver_kwargs_uzf = dict(
-    print_option="summary",
-    outer_dvclose=3e-2,
-    outer_maximum=300,
-    under_relaxation="dbd",
-    linear_acceleration="BICGSTAB",
-    under_relaxation_theta=0.7,
-    under_relaxation_kappa=0.08,
-    under_relaxation_gamma=0.05,
-    under_relaxation_momentum=0.0,
-    inner_dvclose=3e-2,
-    rcloserecord="1000.0 strict",
-    inner_maximum=500,
-    relaxation_factor=0.97,
-    number_orthogonalizations=2,
-    preconditioner_levels=8,
-    preconditioner_drop_tolerance=0.001,
-)
+solver_kwargs_uzf = {
+    "print_option": "summary",
+    "outer_dvclose": 3e-2,
+    "outer_maximum": 300,
+    "under_relaxation": "dbd",
+    "linear_acceleration": "BICGSTAB",
+    "under_relaxation_theta": 0.7,
+    "under_relaxation_kappa": 0.08,
+    "under_relaxation_gamma": 0.05,
+    "under_relaxation_momentum": 0.0,
+    "inner_dvclose": 3e-2,
+    "rcloserecord": "1000.0 strict",
+    "inner_maximum": 500,
+    "relaxation_factor": 0.97,
+    "number_orthogonalizations": 2,
+    "preconditioner_levels": 8,
+    "preconditioner_drop_tolerance": 0.001,
+}

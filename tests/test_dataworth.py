@@ -466,7 +466,7 @@ class TestDataWorthThinning:
     def test_data_worth_thinning_columns(self, dataworth_instance):
         """Test data worth thinning per parameter has correct columns."""
         thinning_intervals = [1, 2]
-        dw_thinning, dw_thinning_per_param = dataworth_instance.data_worth_thinning(
+        _, dw_thinning_per_param = dataworth_instance.data_worth_thinning(
             thinning_intervals
         )
 

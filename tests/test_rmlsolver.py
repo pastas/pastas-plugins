@@ -540,7 +540,7 @@ class TestRMLSolveFiniteDifference:
         solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        success, optimal, stderr = solver.solve()
+        _, optimal, _ = solver.solve()
 
         assert optimal is not None
         assert len(optimal) == len(simple_pastas_model.parameters)
@@ -559,7 +559,7 @@ class TestRMLSolveFiniteDifference:
         solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        success, optimal, stderr = solver.solve()
+        _, _, stderr = solver.solve()
 
         assert stderr is not None
         assert len(stderr) == len(simple_pastas_model.parameters)
@@ -678,7 +678,7 @@ class TestRMLSolveEmpirical:
         solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        success, optimal, stderr = solver.solve()
+        success, _, _ = solver.solve()
 
         assert success  # May be np.True_ so use truthiness check
 
@@ -695,7 +695,7 @@ class TestRMLSolveEmpirical:
         solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        success, optimal, stderr = solver.solve()
+        _, optimal, _ = solver.solve()
 
         assert optimal is not None
         assert len(optimal) == len(simple_pastas_model.parameters)
@@ -749,7 +749,7 @@ class TestRMLSolveEdgeCases:
         rml_solver.initialize(standard_deviation=0.01)
 
         # Should not raise an error for unrecognized kwarg
-        success, optimal, stderr = rml_solver.solve(noise=True)
+        _, optimal, _ = rml_solver.solve(noise=True)
         # Just check it completes, doesn't need to converge
         assert optimal is not None
 
@@ -759,7 +759,7 @@ class TestRMLSolveEdgeCases:
         rml_solver.initialize(standard_deviation=0.01)
 
         # Should not raise an error for unrecognized kwarg
-        success, optimal, stderr = rml_solver.solve(weights=[1, 2, 3])
+        _, optimal, _ = rml_solver.solve(weights=[1, 2, 3])
         # Just check it completes, doesn't need to converge
         assert optimal is not None
 
@@ -776,7 +776,7 @@ class TestRMLSolveEdgeCases:
         solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        success, optimal, stderr = solver.solve()
+        _, optimal, _ = solver.solve()
 
         assert optimal is not None
 
@@ -795,7 +795,7 @@ class TestRMLSolveEdgeCases:
         solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        success, optimal, stderr = solver.solve()
+        success, optimal, _ = solver.solve()
 
         # Just check solve completes with expected return types
         assert isinstance(success, (bool, np.bool_))
@@ -814,7 +814,7 @@ class TestRMLSolveEdgeCases:
         solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        success, optimal, stderr = solver.solve()
+        success, optimal, _ = solver.solve()
 
         # Just check solve completes with expected return types
         assert isinstance(success, (bool, np.bool_))
@@ -839,7 +839,7 @@ class TestRMLSolveEdgeCases:
         solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        success, optimal, stderr = solver.solve()
+        _, optimal, _ = solver.solve()
 
         # All methods should complete (success may vary)
         assert optimal is not None
@@ -1040,7 +1040,7 @@ class TestRMLIntegration:
         simple_pastas_model.add_solver(solver)
         solver.initialize(standard_deviation=0.05)
 
-        success, optimal, stderr = solver.solve()
+        success, optimal, _ = solver.solve()
 
         assert success  # May be np.True_ so use truthiness check
         assert optimal is not None

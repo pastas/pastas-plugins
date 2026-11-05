@@ -72,7 +72,7 @@ def run_pypestworker(
     )
     pvals = ppw.get_parameters()
     if pvals is None:
-        return None
+        return
 
     while True:
         for pname, val in pvals.items():
@@ -1038,7 +1038,7 @@ class PestIesSolver(PestSolver):
         )
         return pe
 
-    @lru_cache()
+    @lru_cache  # noqa: B019
     def simulation_ensemble(
         self,
         iteration: int = 0,
@@ -1212,10 +1212,8 @@ class PestIesSolver(PestSolver):
             - numpy.ndarray: The optimal parameters.
             - numpy.ndarray: The standard error of the parameters.
         """
-        if "noise" in kwargs:
-            del kwargs["noise"]  # remove noise from kwargs, not used in PestIesSolver
-        if "weights" in kwargs:
-            del kwargs["weights"]
+        kwargs.pop("noise", None)  # remove noise from kwargs, not used in PestIesSolver
+        kwargs.pop("weights", None)
 
         if run_ensembles:
             self.run_ensembles(**kwargs)
@@ -1682,7 +1680,7 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
             options=options,
             **kwargs,
         )
-        setattr(tracksolve_callback, "success", result.success)
+        tracksolve_callback.success = result.success
         return tracksolve_callback
 
     @staticmethod
@@ -1745,10 +1743,8 @@ class RandomizedMaximumLikelihoodSolver(BaseSolver):
             )
         if self.noptmax is None:
             logger.info(
-                (
-                    "noptmax is not set. Setting noptmax to 100 times"
-                    "the number of variable parameters for solve method."
-                )
+                "noptmax is not set. Setting noptmax to 100 times"
+                "the number of variable parameters for solve method."
             )
             self.noptmax = 100 * np.sum(self.ml.parameters.loc[:, "vary"])
 
