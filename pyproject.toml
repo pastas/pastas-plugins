@@ -16,7 +16,7 @@ maintainers = [
 ]
 
 requires-python = ">= 3.11"
-dependencies = ["pastas<2.0"]
+dependencies = ["pastas>=2.0"]
 keywords = ["hydrology", "groundwater", "timeseries", "analysis"]
 classifiers = [
         'Development Status :: 3 - Alpha',
@@ -28,6 +28,7 @@ classifiers = [
         'Programming Language :: Python :: 3.12',
         'Programming Language :: Python :: 3.13',
         'Programming Language :: Python :: 3.14',
+        'Programming Language :: Python :: 3.15',
         'Topic :: Scientific/Engineering :: Hydrology',
 ]
 
@@ -70,7 +71,7 @@ show-fixes = true
 fix = true
 
 [tool.tox]
-env_list = ["py311", "py314"]
+env_list = ["py311", "py315"]
 
 [tool.tox.env_run_base]
 description = "run unit tests"
