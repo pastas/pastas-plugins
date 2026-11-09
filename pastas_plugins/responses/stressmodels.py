@@ -1,34 +1,29 @@
-from scipy.special import k0
-from scipy.signal import fftconvolve
-from typing import Any
 from logging import getLogger
 
-from pandas import DataFrame, Series, Timestamp
-
-from pastas.stressmodels import StressModelBase, WellModel
-from pastas.rfunc import Hantush
-
 import numpy as np
-
+from pandas import DataFrame, Series, Timestamp
+from pastas.rfunc import Hantush
+from pastas.stressmodels import WellModel
 from pastas.typing import (
     ArrayLike,
     Model,
     RFunc,
-    StressSettingsDict,
 )
+from scipy.signal import fftconvolve
+from scipy.special import k0
 
 logger = getLogger(__name__)
 
 
-class WellModel2(WellModel):
+class WellModelPhysical(WellModel):
     """
-    WellModel2 is a subclass of WellModel that uses the response function Hantush
-    instead of HantushWellModel. The parameters of WellModel2 are the geohydrological
+    WellModelPhysical is a subclass of WellModel that uses the response function Hantush
+    instead of HantushWellModel. The parameters of WellModelPhysical are the geohydrological
     parameters T, S and c instead of the parameters A, b and A of the
     HantushWellModel. The distance to the observation point is used to scale the
     response function for each stress, as in WellModel."""
 
-    _name = "WellModel2"
+    _name = "WellModelPhysical"
 
     def __init__(self, *args, rfunc: RFunc | None = None, **kwargs) -> None:
         # call super init to set all properties the same as WellModel, except for rfunc
@@ -37,7 +32,7 @@ class WellModel2(WellModel):
         if rfunc is None:
             rfunc = Hantush()
         elif not isinstance(rfunc, Hantush):
-            raise NotImplementedError("WellModel2 only supports the rfunc Hantush!")
+            raise NotImplementedError("WellModelPhysical only supports the rfunc Hantush!")
         up = self.rfunc.up
         gain_scale_factor = self.rfunc.gain_scale_factor
         rfunc.update_rfunc_settings(up=up, gain_scale_factor=gain_scale_factor)
@@ -98,5 +93,5 @@ class WellModel2(WellModel):
     def variance_gain(
         self, model: Model, istress: int | None = None, r: ArrayLike | None = None
     ) -> float:
-        # not implemented for WellModel2
-        raise NotImplementedError("Variance of gain is not implemented for WellModel2!")
+        # not implemented for WellModelPhysical
+        raise NotImplementedError("Variance of gain is not implemented for WellModelPhysical!")
