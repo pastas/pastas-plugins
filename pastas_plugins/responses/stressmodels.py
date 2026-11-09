@@ -23,8 +23,6 @@ class WellModelPhysical(WellModel):
     HantushWellModel. The distance to the observation point is used to scale the
     response function for each stress, as in WellModel."""
 
-    _name = "WellModelPhysical"
-
     def __init__(self, *args, rfunc: RFunc | None = None, **kwargs) -> None:
         # call super init to set all properties the same as WellModel, except for rfunc
         super().__init__(*args, **kwargs)
@@ -92,10 +90,18 @@ class WellModelPhysical(WellModel):
             h.name = self.name
         return h
 
+    def _get_responses(*args, **kwargs) -> DataFrame:
+        # return empty dataframe with columns equal to lenght of distances / stresses, and log error
+        logger.error("The _get_responses method is not implemented for WellModelPhysical. Returning empty DataFrame.")
+        columns = [stress.name for stress in args[0].stress]
+        return DataFrame(np.zeros((2, len(columns))), columns=columns)
+
+
     def variance_gain(
         self, model: Model, istress: int | None = None, r: ArrayLike | None = None
     ) -> float:
         # not implemented for WellModelPhysical
+        _ = model, istress, r  # unused variables
         raise NotImplementedError(
             "Variance of gain is not implemented for WellModelPhysical!"
         )
