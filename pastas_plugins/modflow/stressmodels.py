@@ -63,8 +63,6 @@ class ModflowModel(StressModelBase):
         ``ModflowGwf``.
     """
 
-    _name = "ModflowModel"
-
     def __init__(
         self,
         model: Model,
@@ -91,14 +89,13 @@ class ModflowModel(StressModelBase):
                 if model.settings["tmax"] is not None
                 else model.oseries.settings["tmax"]
             )
-        StressModelBase.__init__(
-            self,
+        super().__init__(
+            model=model,
             name=name,
             tmin=tmin,
             tmax=tmax,
             rfunc=None,
         )
-        self.model = model
         self.save_heads = save_heads
         if "constant_d" in model.parameters.index:
             model.del_constant()
@@ -129,6 +126,9 @@ class ModflowModel(StressModelBase):
         self._simulation, self._gwf = self.setup_modflow_simulation(
             newtonoptions=newtonoptions
         )
+        self.set_init_parameters()
+        if self.model is not None:
+            self.model._add_stressmodel(self)
 
     @property
     def nper(self) -> int:
@@ -142,9 +142,18 @@ class ModflowModel(StressModelBase):
         return len(date_range(self.tmin, self.tmax, freq=self.model.settings["freq"]))
 
     @property
-    def nparam(self) -> int:
-        """Number of parameters."""
-        return len(self.parameters)
+    def stresses(self) -> tuple:
+        """All the stress time series in the stressmodel as a tuple.
+
+        A MODFLOW-based stressmodel has no pastas stress time series; the
+        stresses are handled inside the MODFLOW simulation.
+        """
+        return ()
+
+    @property
+    def nsplit(self) -> int:
+        """Number of time series the contribution can be split in."""
+        return 1
 
     @property
     def package_parameter_names(self) -> dict[str, list[str]]:
@@ -269,6 +278,9 @@ class ModflowModel(StressModelBase):
                     setattr(ipkg, stress_name, ts.series)
 
         self.set_init_parameters()
+        # refresh the model parameters if this stressmodel is attached to a model
+        if self.model is not None and self.name in self.model.stressmodels:
+            self.model._parameters = self.model.get_init_parameters(initial=False)
 
     def _remove_changing_package(self, package_name: str):
         """Remove a package from the GWF model if it exists.
@@ -503,8 +515,6 @@ class ModflowModelApi(ModflowModel):
         resolution. Set to ``None`` to disable rounding and pass
         parameters at full float64 precision. Default is ``None``.
     """
-
-    _name = "ModflowModelApi"
 
     def __init__(
         self,
