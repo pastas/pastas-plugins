@@ -44,9 +44,9 @@ def test_ccf_invalid_length():
 
 def test_ccf_invalid_frequency():
     x_copy = x.copy()
-    x_idx = x_copy.index.values
+    x_idx = x.index.to_numpy().copy()
     x_idx[0] = sdate - pd.Timedelta(days=1)
-    x_copy.index = x_idx
+    x_copy.index = pd.DatetimeIndex(x_idx)
     with pytest.raises(ValueError):
         ppcc.ccf(x_copy, y)
 

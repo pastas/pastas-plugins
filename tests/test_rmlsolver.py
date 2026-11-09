@@ -40,8 +40,7 @@ def simple_pastas_model():
         name="evaporation",
     )
     ml = ps.Model(observations, name="test_ml")
-    rm = ps.RechargeModel(prec, evap, name="rch", rfunc=ps.Gamma())
-    ml.add_stressmodel(rm)
+    ps.RechargeModel(ml, prec, evap, name="rch", rfunc=ps.Gamma())
     ml.set_parameter(
         "constant_d",
         pmin=observations.min(),
@@ -52,9 +51,10 @@ def simple_pastas_model():
 
 
 @pytest.fixture
-def rml_solver():
+def rml_solver(simple_pastas_model):
     """Create a basic RML solver instance."""
     return RandomizedMaximumLikelihoodSolver(
+        simple_pastas_model,
         num_reals=10,
         jacobian_method="2-point",
         noptmax=10,
@@ -67,7 +67,6 @@ def rml_solver():
 @pytest.fixture
 def initialized_rml_solver(simple_pastas_model, rml_solver):
     """Create an initialized RML solver for testing."""
-    rml_solver.ml = simple_pastas_model
     rml_solver.initialize(standard_deviation=0.1)
     return rml_solver
 
@@ -80,9 +79,9 @@ def initialized_rml_solver(simple_pastas_model, rml_solver):
 class TestRMLSolverInitialization:
     """Tests for RML solver initialization and configuration."""
 
-    def test_default_initialization(self):
+    def test_default_initialization(self, simple_pastas_model):
         """Test RML solver with minimal required parameters."""
-        solver = RandomizedMaximumLikelihoodSolver(num_reals=5)
+        solver = RandomizedMaximumLikelihoodSolver(simple_pastas_model, num_reals=5)
         assert solver.num_reals == 5
         assert solver.jacobian_method == "3-point"  # default
         assert solver.beta == 0.5  # default
@@ -90,9 +89,10 @@ class TestRMLSolverInitialization:
         assert solver.add_base is True  # default
         assert solver.tol == 1e-8  # default
 
-    def test_initialization_all_parameters(self):
+    def test_initialization_all_parameters(self, simple_pastas_model):
         """Test RML solver with all parameters specified."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=20,
             jacobian_method="empirical",
             beta=0.3,
@@ -122,35 +122,42 @@ class TestRMLSolverInitialization:
         assert rml_solver.convergence_ensemble is None
 
     @pytest.mark.parametrize("jacobian_method", ["2-point", "3-point", "empirical"])
-    def test_jacobian_methods(self, jacobian_method):
+    def test_jacobian_methods(self, simple_pastas_model, jacobian_method):
         """Test all valid jacobian methods can be set."""
         noptmax = 5 if jacobian_method == "empirical" else None
         solver = RandomizedMaximumLikelihoodSolver(
-            num_reals=5, jacobian_method=jacobian_method, noptmax=noptmax
+            simple_pastas_model,
+            num_reals=5,
+            jacobian_method=jacobian_method,
+            noptmax=noptmax,
         )
         assert solver.jacobian_method == jacobian_method
 
     @pytest.mark.parametrize(
         "minimize_method", ["L-BFGS-B", "TNC", "SLSQP", "trust-constr"]
     )
-    def test_minimize_methods(self, minimize_method):
+    def test_minimize_methods(self, simple_pastas_model, minimize_method):
         """Test all valid minimize methods can be set."""
         solver = RandomizedMaximumLikelihoodSolver(
-            num_reals=5, minimize_method=minimize_method
+            simple_pastas_model, num_reals=5, minimize_method=minimize_method
         )
         assert solver.minimize_method == minimize_method
 
-    def test_num_workers_defaults_to_cpu_count(self):
+    def test_num_workers_defaults_to_cpu_count(self, simple_pastas_model):
         """Test num_workers defaults to cpu_count when None."""
         from os import cpu_count
 
-        solver = RandomizedMaximumLikelihoodSolver(num_reals=5, num_workers=None)
+        solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model, num_reals=5, num_workers=None
+        )
         assert solver.num_workers == cpu_count()
 
-    def test_beta_parameter_range(self):
+    def test_beta_parameter_range(self, simple_pastas_model):
         """Test beta parameter with different values."""
         for beta in [0.0, 0.25, 0.5, 0.75, 1.0]:
-            solver = RandomizedMaximumLikelihoodSolver(num_reals=5, beta=beta)
+            solver = RandomizedMaximumLikelihoodSolver(
+                simple_pastas_model, num_reals=5, beta=beta
+            )
             assert solver.beta == beta
 
 
@@ -207,7 +214,6 @@ class TestRMLSolverInitialize:
         self, simple_pastas_model, rml_solver
     ):
         """Test initialize creates parameter ensemble."""
-        rml_solver.ml = simple_pastas_model
         rml_solver.initialize(standard_deviation=0.1)
 
         assert rml_solver.parameter_ensemble is not None
@@ -217,7 +223,6 @@ class TestRMLSolverInitialize:
         self, simple_pastas_model, rml_solver
     ):
         """Test initialize creates observation noise."""
-        rml_solver.ml = simple_pastas_model
         rml_solver.initialize(standard_deviation=0.1)
 
         assert rml_solver.observation_noise is not None
@@ -225,7 +230,6 @@ class TestRMLSolverInitialize:
 
     def test_initialize_parameter_ensemble_shape(self, simple_pastas_model, rml_solver):
         """Test parameter ensemble has correct shape."""
-        rml_solver.ml = simple_pastas_model
         rml_solver.initialize(standard_deviation=0.1)
 
         # MultiIndex (real, iteration), 10 realizations at iteration 0
@@ -236,7 +240,6 @@ class TestRMLSolverInitialize:
 
     def test_initialize_observation_noise_shape(self, simple_pastas_model, rml_solver):
         """Test observation noise has correct shape."""
-        rml_solver.ml = simple_pastas_model
         rml_solver.initialize(standard_deviation=0.1)
 
         n_obs = len(simple_pastas_model.observations())
@@ -246,9 +249,8 @@ class TestRMLSolverInitialize:
     def test_initialize_with_add_base_true(self, simple_pastas_model):
         """Test initialize with add_base=True includes base realization."""
         solver = RandomizedMaximumLikelihoodSolver(
-            num_reals=10, seed=42, add_base=True, num_workers=1
+            simple_pastas_model, num_reals=10, seed=42, add_base=True, num_workers=1
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.1)
 
         assert "base" in solver.parameter_ensemble.index.get_level_values("real")
@@ -257,9 +259,8 @@ class TestRMLSolverInitialize:
     def test_initialize_with_add_base_false(self, simple_pastas_model):
         """Test initialize with add_base=False excludes base realization."""
         solver = RandomizedMaximumLikelihoodSolver(
-            num_reals=10, seed=42, add_base=False, num_workers=1
+            simple_pastas_model, num_reals=10, seed=42, add_base=False, num_workers=1
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.1)
 
         assert "base" not in solver.parameter_ensemble.index.get_level_values("real")
@@ -268,9 +269,8 @@ class TestRMLSolverInitialize:
     def test_initialize_base_has_zero_noise(self, simple_pastas_model):
         """Test base realization has zero observation noise."""
         solver = RandomizedMaximumLikelihoodSolver(
-            num_reals=10, seed=42, add_base=True, num_workers=1
+            simple_pastas_model, num_reals=10, seed=42, add_base=True, num_workers=1
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.1)
 
         assert np.allclose(solver.observation_noise.loc[:, "base"], 0.0)
@@ -278,9 +278,8 @@ class TestRMLSolverInitialize:
     def test_initialize_base_has_initial_parameters(self, simple_pastas_model):
         """Test base realization has initial parameter values."""
         solver = RandomizedMaximumLikelihoodSolver(
-            num_reals=10, seed=42, add_base=True, num_workers=1
+            simple_pastas_model, num_reals=10, seed=42, add_base=True, num_workers=1
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.1)
 
         base_params = solver.parameter_ensemble.loc["base"].iloc[0]
@@ -291,9 +290,8 @@ class TestRMLSolverInitialize:
     def test_initialize_parameter_methods(self, simple_pastas_model, method):
         """Test parameter initialization with different distribution methods."""
         solver = RandomizedMaximumLikelihoodSolver(
-            num_reals=50, seed=42, add_base=False, num_workers=1
+            simple_pastas_model, num_reals=50, seed=42, add_base=False, num_workers=1
         )
-        solver.ml = simple_pastas_model
         solver.initialize(method=method)
 
         assert solver.parameter_ensemble is not None
@@ -302,9 +300,8 @@ class TestRMLSolverInitialize:
     def test_initialize_zero_standard_deviation(self, simple_pastas_model):
         """Test initialize with zero standard deviation."""
         solver = RandomizedMaximumLikelihoodSolver(
-            num_reals=10, seed=42, add_base=False, num_workers=1
+            simple_pastas_model, num_reals=10, seed=42, add_base=False, num_workers=1
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.0)
 
         # All noise should be zero
@@ -313,9 +310,8 @@ class TestRMLSolverInitialize:
     def test_initialize_with_correlation(self, simple_pastas_model):
         """Test initialize with observation noise correlation."""
         solver = RandomizedMaximumLikelihoodSolver(
-            num_reals=10, seed=42, add_base=True, num_workers=1
+            simple_pastas_model, num_reals=10, seed=42, add_base=True, num_workers=1
         )
-        solver.ml = simple_pastas_model
         solver.initialize(
             standard_deviation=0.1,
             correlation_coefficient=0.5,
@@ -328,9 +324,8 @@ class TestRMLSolverInitialize:
     def test_initialize_parameters_within_bounds(self, simple_pastas_model):
         """Test that initialized parameters are within model bounds."""
         solver = RandomizedMaximumLikelihoodSolver(
-            num_reals=100, seed=42, add_base=False, num_workers=1
+            simple_pastas_model, num_reals=100, seed=42, add_base=False, num_workers=1
         )
-        solver.ml = simple_pastas_model
         solver.initialize(method="uniform")
 
         params = solver.parameter_ensemble
@@ -348,15 +343,21 @@ class TestRMLSolverInitialize:
         num_workers = 1
         standard_deviation = 0.1
         solver1 = RandomizedMaximumLikelihoodSolver(
-            num_reals=num_reals, seed=seed, add_base=add_base, num_workers=num_workers
+            simple_pastas_model,
+            num_reals=num_reals,
+            seed=seed,
+            add_base=add_base,
+            num_workers=num_workers,
         )
-        solver1.ml = simple_pastas_model
         solver1.initialize(standard_deviation=standard_deviation)
 
         solver2 = RandomizedMaximumLikelihoodSolver(
-            num_reals=num_reals, seed=seed, add_base=add_base, num_workers=num_workers
+            simple_pastas_model,
+            num_reals=num_reals,
+            seed=seed,
+            add_base=add_base,
+            num_workers=num_workers,
         )
-        solver2.ml = simple_pastas_model
         solver2.initialize(standard_deviation=standard_deviation)
 
         assert solver1.parameter_ensemble.shape == solver2.parameter_ensemble.shape
@@ -366,7 +367,6 @@ class TestRMLSolverInitialize:
 
     def test_initialize_multiindex_structure(self, simple_pastas_model, rml_solver):
         """Test parameter ensemble has correct MultiIndex structure."""
-        rml_solver.ml = simple_pastas_model
         rml_solver.initialize(standard_deviation=0.1)
 
         assert rml_solver.parameter_ensemble.index.names == ["real", "iteration"]
@@ -507,6 +507,7 @@ class TestRMLSolveFiniteDifference:
     def test_solve_returns_success(self, simple_pastas_model, jacobian_method):
         """Test solve completes and returns expected tuple."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=3,
             jacobian_method=jacobian_method,
             noptmax=10,
@@ -514,10 +515,11 @@ class TestRMLSolveFiniteDifference:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        success, optimal, stderr = solver.solve()
+        success, result = solver.solve()
+        optimal = result["optimal"].to_numpy()
+        stderr = result["stderr"].to_numpy()
 
         # Check solve returns a boolean (may be np.bool_)
         assert isinstance(success, (bool, np.bool_))
@@ -530,6 +532,7 @@ class TestRMLSolveFiniteDifference:
     ):
         """Test solve returns optimal parameters."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=3,
             jacobian_method=jacobian_method,
             noptmax=10,
@@ -537,10 +540,10 @@ class TestRMLSolveFiniteDifference:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        _, optimal, _ = solver.solve()
+        _, result = solver.solve()
+        optimal = result["optimal"].to_numpy()
 
         assert optimal is not None
         assert len(optimal) == len(simple_pastas_model.parameters)
@@ -549,6 +552,7 @@ class TestRMLSolveFiniteDifference:
     def test_solve_returns_stderr(self, simple_pastas_model, jacobian_method):
         """Test solve returns standard errors."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=3,
             jacobian_method=jacobian_method,
             noptmax=10,
@@ -556,10 +560,10 @@ class TestRMLSolveFiniteDifference:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        _, _, stderr = solver.solve()
+        _, result = solver.solve()
+        stderr = result["stderr"].to_numpy()
 
         assert stderr is not None
         assert len(stderr) == len(simple_pastas_model.parameters)
@@ -567,6 +571,7 @@ class TestRMLSolveFiniteDifference:
     def test_solve_sets_nfev(self, simple_pastas_model):
         """Test solve sets nfev correctly."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=5,
             jacobian_method="2-point",
             noptmax=10,
@@ -574,7 +579,6 @@ class TestRMLSolveFiniteDifference:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
         solver.solve()
@@ -586,6 +590,7 @@ class TestRMLSolveFiniteDifference:
     def test_solve_sets_simulation_ensemble(self, simple_pastas_model):
         """Test solve sets simulation_ensemble."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=5,
             jacobian_method="2-point",
             noptmax=10,
@@ -593,7 +598,6 @@ class TestRMLSolveFiniteDifference:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
         solver.solve()
@@ -603,6 +607,7 @@ class TestRMLSolveFiniteDifference:
     def test_solve_sets_obj_func_ensemble(self, simple_pastas_model):
         """Test solve sets obj_func_ensemble."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=5,
             jacobian_method="2-point",
             noptmax=10,
@@ -610,7 +615,6 @@ class TestRMLSolveFiniteDifference:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
         solver.solve()
@@ -620,6 +624,7 @@ class TestRMLSolveFiniteDifference:
     def test_solve_sets_convergence_ensemble(self, simple_pastas_model):
         """Test solve sets convergence_ensemble."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=5,
             jacobian_method="2-point",
             noptmax=10,
@@ -627,7 +632,6 @@ class TestRMLSolveFiniteDifference:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
         solver.solve()
@@ -637,6 +641,7 @@ class TestRMLSolveFiniteDifference:
     def test_solve_updates_parameter_ensemble(self, simple_pastas_model):
         """Test solve updates parameter_ensemble with iterations."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=3,
             jacobian_method="2-point",
             noptmax=10,
@@ -644,7 +649,6 @@ class TestRMLSolveFiniteDifference:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
         # Store initial shape
@@ -668,6 +672,7 @@ class TestRMLSolveEmpirical:
     def test_solve_empirical_returns_success(self, simple_pastas_model):
         """Test empirical solve returns success."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=3,
             jacobian_method="empirical",
             noptmax=2,
@@ -675,16 +680,16 @@ class TestRMLSolveEmpirical:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        success, _, _ = solver.solve()
+        success, _ = solver.solve()
 
         assert success  # May be np.True_ so use truthiness check
 
     def test_solve_empirical_returns_optimal(self, simple_pastas_model):
         """Test empirical solve returns optimal parameters."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=3,
             jacobian_method="empirical",
             noptmax=2,
@@ -692,10 +697,10 @@ class TestRMLSolveEmpirical:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        _, optimal, _ = solver.solve()
+        _, result = solver.solve()
+        optimal = result["optimal"].to_numpy()
 
         assert optimal is not None
         assert len(optimal) == len(simple_pastas_model.parameters)
@@ -703,6 +708,7 @@ class TestRMLSolveEmpirical:
     def test_solve_empirical_sets_nfev_to_noptmax(self, simple_pastas_model):
         """Test empirical solve sets nfev to noptmax."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=3,
             jacobian_method="empirical",
             noptmax=3,
@@ -710,7 +716,6 @@ class TestRMLSolveEmpirical:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
         solver.solve()
@@ -720,6 +725,7 @@ class TestRMLSolveEmpirical:
     def test_solve_empirical_sets_simulation_ensemble(self, simple_pastas_model):
         """Test empirical solve sets simulation_ensemble."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=3,
             jacobian_method="empirical",
             noptmax=2,
@@ -727,7 +733,6 @@ class TestRMLSolveEmpirical:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
         solver.solve()
@@ -745,27 +750,28 @@ class TestRMLSolveEdgeCases:
 
     def test_solve_removes_noise_kwarg(self, simple_pastas_model, rml_solver):
         """Test solve removes 'noise' from kwargs."""
-        rml_solver.ml = simple_pastas_model
         rml_solver.initialize(standard_deviation=0.01)
 
         # Should not raise an error for unrecognized kwarg
-        _, optimal, _ = rml_solver.solve(noise=True)
+        _, result = rml_solver.solve(noise=True)
+        optimal = result["optimal"].to_numpy()
         # Just check it completes, doesn't need to converge
         assert optimal is not None
 
     def test_solve_removes_weights_kwarg(self, simple_pastas_model, rml_solver):
         """Test solve removes 'weights' from kwargs."""
-        rml_solver.ml = simple_pastas_model
         rml_solver.initialize(standard_deviation=0.01)
 
         # Should not raise an error for unrecognized kwarg
-        _, optimal, _ = rml_solver.solve(weights=[1, 2, 3])
+        _, result = rml_solver.solve(weights=[1, 2, 3])
+        optimal = result["optimal"].to_numpy()
         # Just check it completes, doesn't need to converge
         assert optimal is not None
 
     def test_solve_with_add_base_false_uses_mean(self, simple_pastas_model):
         """Test solve without base uses mean of ensemble."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=5,
             jacobian_method="2-point",
             noptmax=10,
@@ -773,10 +779,10 @@ class TestRMLSolveEdgeCases:
             add_base=False,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        _, optimal, _ = solver.solve()
+        _, result = solver.solve()
+        optimal = result["optimal"].to_numpy()
 
         assert optimal is not None
 
@@ -785,6 +791,7 @@ class TestRMLSolveEdgeCases:
         # Note: num_reals=1 with add_base=False causes pandas error in solver
         # when computing mean of obj_func_ensemble. Use add_base=True instead.
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=2,
             jacobian_method="2-point",
             noptmax=10,
@@ -792,10 +799,10 @@ class TestRMLSolveEdgeCases:
             add_base=True,  # One non-base realization + base
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        success, optimal, _ = solver.solve()
+        success, result = solver.solve()
+        optimal = result["optimal"].to_numpy()
 
         # Just check solve completes with expected return types
         assert isinstance(success, (bool, np.bool_))
@@ -804,6 +811,7 @@ class TestRMLSolveEdgeCases:
     def test_solve_two_realizations_with_base(self, simple_pastas_model):
         """Test solve with two realizations including base."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=3,
             jacobian_method="2-point",
             noptmax=10,
@@ -811,10 +819,10 @@ class TestRMLSolveEdgeCases:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        success, optimal, _ = solver.solve()
+        success, result = solver.solve()
+        optimal = result["optimal"].to_numpy()
 
         # Just check solve completes with expected return types
         assert isinstance(success, (bool, np.bool_))
@@ -828,6 +836,7 @@ class TestRMLSolveEdgeCases:
     ):
         """Test solve with different minimize methods."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=3,
             jacobian_method="2-point",
             minimize_method=minimize_method,
@@ -836,10 +845,10 @@ class TestRMLSolveEdgeCases:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
-        _, optimal, _ = solver.solve()
+        _, result = solver.solve()
+        optimal = result["optimal"].to_numpy()
 
         # All methods should complete (success may vary)
         assert optimal is not None
@@ -847,6 +856,7 @@ class TestRMLSolveEdgeCases:
     def test_solve_with_noptmax_limits_iterations(self, simple_pastas_model):
         """Test solve with noptmax limits iterations for FD methods."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=3,
             jacobian_method="2-point",
             noptmax=5,
@@ -854,7 +864,6 @@ class TestRMLSolveEdgeCases:
             add_base=True,
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
         solver.solve()
@@ -944,9 +953,8 @@ class TestRMLStaticMethods:
     def test_simulate_static_method(self, simple_pastas_model):
         """Test _simulate static method."""
         solver = RandomizedMaximumLikelihoodSolver(
-            num_reals=3, seed=42, add_base=False, num_workers=1
+            simple_pastas_model, num_reals=3, seed=42, add_base=False, num_workers=1
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
         # Get parameter ensemble with droppedlevel for iteration
@@ -962,9 +970,8 @@ class TestRMLStaticMethods:
     def test_least_squares_em_static_method(self, simple_pastas_model):
         """Test _least_squares_em static method returns DataFrame."""
         solver = RandomizedMaximumLikelihoodSolver(
-            num_reals=5, seed=42, add_base=False, num_workers=1
+            simple_pastas_model, num_reals=5, seed=42, add_base=False, num_workers=1
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.01)
 
         # Create dummy simulations
@@ -1001,6 +1008,7 @@ class TestRMLIntegration:
         """Test complete workflow with finite difference."""
         # Create solver
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=5,
             jacobian_method="2-point",
             noptmax=10,
@@ -1010,13 +1018,14 @@ class TestRMLIntegration:
         )
 
         # Add to model
-        simple_pastas_model.add_solver(solver)
 
         # Initialize
         solver.initialize(standard_deviation=0.05, method="truncnorm")
 
         # Solve
-        success, optimal, stderr = solver.solve()
+        success, result = solver.solve()
+        optimal = result["optimal"].to_numpy()
+        stderr = result["stderr"].to_numpy()
 
         # Verify results - FD may not converge, just check return types
         assert isinstance(success, (bool, np.bool_))
@@ -1029,6 +1038,7 @@ class TestRMLIntegration:
     def test_full_workflow_empirical(self, simple_pastas_model):
         """Test complete workflow with empirical Jacobian."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=5,
             jacobian_method="empirical",
             noptmax=3,
@@ -1036,11 +1046,10 @@ class TestRMLIntegration:
             add_base=True,
             num_workers=1,
         )
-
-        simple_pastas_model.add_solver(solver)
         solver.initialize(standard_deviation=0.05)
 
-        success, optimal, _ = solver.solve()
+        success, result = solver.solve()
+        optimal = result["optimal"].to_numpy()
 
         assert success  # May be np.True_ so use truthiness check
         assert optimal is not None
@@ -1049,6 +1058,7 @@ class TestRMLIntegration:
     def test_parameter_bounds_respected_after_solve(self, simple_pastas_model):
         """Test that final parameters are within bounds."""
         solver = RandomizedMaximumLikelihoodSolver(
+            simple_pastas_model,
             num_reals=10,
             jacobian_method="2-point",
             noptmax=10,
@@ -1056,7 +1066,6 @@ class TestRMLIntegration:
             add_base=True,  # Use add_base=True to avoid pandas Series issue
             num_workers=1,
         )
-        solver.ml = simple_pastas_model
         solver.initialize(standard_deviation=0.05)
 
         solver.solve()
