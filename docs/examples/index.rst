@@ -57,7 +57,7 @@ Response functions
 StressModel alternatives
 -----------------------
 
-:doc:`Adding Multiple Wells with Physical Hantush Parameters <multiple_wells>`
+:doc:`Adding Multiple Wells with Physical Hantush Parameters <physical_hantush_wellmodel>`
 
 
 Modflow StressModel
