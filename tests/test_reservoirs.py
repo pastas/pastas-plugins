@@ -65,9 +65,10 @@ def test_reservoir_model_set_stress(reservoir_model):
 
 def test_reservoir_model_get_stress(reservoir_model):
     _, rm = reservoir_model
-    prec, evap = rm.get_stress()
-    assert isinstance(prec, pd.Series)
-    assert isinstance(evap, pd.Series)
+    stresses = rm.get_stress()
+    assert isinstance(stresses, pd.DataFrame)
+    assert isinstance(stresses["prec"], pd.Series)
+    assert isinstance(stresses["evap"], pd.Series)
 
 
 def test_reservoir_model_solve(reservoir_model):

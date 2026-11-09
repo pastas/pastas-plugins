@@ -222,7 +222,9 @@ class ReservoirModel(StressModelBase):
             The simulated head contribution.
         """
         _ = dt, istress
-        prec, evap = self.get_stress(tmin=tmin, tmax=tmax, freq=freq)
+        stresses = self.get_stress(tmin=tmin, tmax=tmax, freq=freq)
+        prec = stresses["prec"]
+        evap = stresses["evap"]
         h = Series(
             data=self.reservoir.simulate(prec, evap, p),
             index=prec.index,
@@ -243,8 +245,8 @@ class ReservoirModel(StressModelBase):
 
         Returns
         -------
-        tuple of pandas.Series
-            The precipitation and evaporation series.
+        pandas.DataFrame
+            DataFrame with the precipitation and evaporation series as columns.
         """
         _ = p, istress, kwargs
         tmin = self.tmin if tmin is None else tmin
