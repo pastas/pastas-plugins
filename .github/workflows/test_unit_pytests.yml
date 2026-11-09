@@ -24,41 +24,41 @@ jobs:
           - name: Test suite for modflow plugin with py311-ubuntu
             python: "3.11"
             toxenv: modflow
-          - name: Test suite for modflow plugin with py314-ubuntu
-            python: "3.14"
+          - name: Test suite for modflow plugin with py315-ubuntu
+            python: "3.15"
             toxenv: modflow
           - name: Test suite for responses plugin with py311-ubuntu
             python: "3.11"
             toxenv: responses
-          - name: Test suite for responses plugin with py314-ubuntu
-            python: "3.14"
+          - name: Test suite for responses plugin with py315-ubuntu
+            python: "3.15"
             toxenv: responses
           - name: Test suite for reservoirs plugin with py311-ubuntu
             python: "3.11"
             toxenv: reservoirs
-          - name: Test suite for reservoirs plugin with py314-ubuntu
-            python: "3.14"
+          - name: Test suite for reservoirs plugin with py315-ubuntu
+            python: "3.15"
             toxenv: reservoirs
           - name: Test suite for cross_correlation plugin with py311-ubuntu
             python: "3.11"
             toxenv: cross_correlation
-          - name: Test suite for cross_correlation plugin with py314-ubuntu
-            python: "3.14"
+          - name: Test suite for cross_correlation plugin with py315-ubuntu
+            python: "3.15"
             toxenv: cross_correlation
           - name: Test suite for rml_solver plugin with py311-ubuntu
             python: "3.11"
             toxenv: rml_solver
-          - name: Test suite for rml_solver plugin with py314-ubuntu
-            python: "3.14"
+          - name: Test suite for rml_solver plugin with py315-ubuntu
+            python: "3.15"
             toxenv: rml_solver
           - name: Test suite for dataworth plugin with py311-ubuntu
             python: "3.11"
             toxenv: dataworth
-          - name: Test suite for dataworth plugin with py314-ubuntu
-            python: "3.14"
+          - name: Test suite for dataworth plugin with py315-ubuntu
+            python: "3.15"
             toxenv: dataworth
           - name: Test suite for all unit tests
-            python: "3.14"
+            python: "3.15"
             toxenv: all
     env:
       # Color Output
