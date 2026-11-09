@@ -1,7 +1,7 @@
 from collections import namedtuple
 from typing import Any
 
-from pandas import Series, Timestamp
+from pandas import DataFrame, Series, Timestamp
 from pastas.model import Model
 from pastas.stressmodels import StressModelBase
 from pastas.timeseries import TimeSeries
@@ -238,7 +238,7 @@ class ReservoirModel(StressModelBase):
         freq: str | None = None,
         istress: int | None = None,
         **kwargs,
-    ) -> tuple[Series, Series]:
+    ) -> DataFrame:
         """Get the precipitation and evaporation stress series.
 
         Returns
@@ -252,7 +252,7 @@ class ReservoirModel(StressModelBase):
 
         self.update_stress(tmin=tmin, tmax=tmax, freq=freq)
 
-        return self.prec.series, self.evap.series
+        return DataFrame({"prec": self.prec.series, "evap": self.evap.series})
 
     def to_dict(self, series: bool = True) -> dict[str, Any]:
         """Export the ReservoirModel to a dictionary.

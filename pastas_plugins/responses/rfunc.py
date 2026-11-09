@@ -82,8 +82,7 @@ class Theis(RfuncBase):
             cutoff = self.cutoff
         return -p[1] * np.log(1 - cutoff)
 
-    @staticmethod
-    def gain(p: ArrayLike) -> float:
+    def gain(self, p: ArrayLike) -> float:
         return p[0]
 
     def step(

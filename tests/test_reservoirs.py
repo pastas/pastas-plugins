@@ -30,14 +30,14 @@ def test_reservoir_model_added_to_model(reservoir_model):
 
 
 def test_reservoir_model_parameters(reservoir_model):
-    ml, rm = reservoir_model
+    ml, _ = reservoir_model
     assert len(ml.parameters) == 5  # 4 reservoir parameters + constant_d
     assert "res_S" in ml.parameters.index
     assert "constant_d" in ml.parameters.index
 
 
 def test_reservoir_model_stresses(reservoir_model):
-    ml, rm = reservoir_model
+    _, rm = reservoir_model
     assert len(rm.stresses) == 2
     assert rm.stresses.prec.name == "prec"
     assert rm.stresses.evap.name == "evap"
@@ -45,7 +45,7 @@ def test_reservoir_model_stresses(reservoir_model):
 
 
 def test_reservoir_model_simulate(reservoir_model):
-    ml, rm = reservoir_model
+    ml, _ = reservoir_model
     sim = ml.simulate()
     assert isinstance(sim, pd.Series)
     assert len(sim) > 0
@@ -53,7 +53,7 @@ def test_reservoir_model_simulate(reservoir_model):
 
 
 def test_reservoir_model_set_stress(reservoir_model):
-    ml, rm = reservoir_model
+    _, rm = reservoir_model
     prec_new = rm.prec.series * 2.0
     rm.set_stress(prec=prec_new)
     assert np.allclose(rm.prec.series.values, prec_new.values)
@@ -64,20 +64,20 @@ def test_reservoir_model_set_stress(reservoir_model):
 
 
 def test_reservoir_model_get_stress(reservoir_model):
-    ml, rm = reservoir_model
+    _, rm = reservoir_model
     prec, evap = rm.get_stress()
     assert isinstance(prec, pd.Series)
     assert isinstance(evap, pd.Series)
 
 
 def test_reservoir_model_solve(reservoir_model):
-    ml, rm = reservoir_model
+    ml, _ = reservoir_model
     ml.solve(report=False)
     assert not ml.parameters["optimal"].isna().any()
 
 
 def test_reservoir_model_to_dict(reservoir_model):
-    ml, rm = reservoir_model
+    _, rm = reservoir_model
     data = rm.to_dict(series=False)
     assert data["class"] == "ReservoirModel"
     assert data["name"] == "res"

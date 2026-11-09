@@ -92,10 +92,11 @@ class WellModelPhysical(WellModel):
 
     def _get_responses(*args, **kwargs) -> DataFrame:
         # return empty dataframe with columns equal to lenght of distances / stresses, and log error
-        logger.error("The _get_responses method is not implemented for WellModelPhysical. Returning empty DataFrame.")
+        logger.error(
+            "The _get_responses method is not implemented for WellModelPhysical. Returning empty DataFrame."
+        )
         columns = [stress.name for stress in args[0].stress]
         return DataFrame(np.zeros((2, len(columns))), columns=columns)
-
 
     def variance_gain(
         self, model: Model, istress: int | None = None, r: ArrayLike | None = None
