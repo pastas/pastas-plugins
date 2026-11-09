@@ -32,7 +32,9 @@ class WellModelPhysical(WellModel):
         if rfunc is None:
             rfunc = Hantush()
         elif not isinstance(rfunc, Hantush):
-            raise NotImplementedError("WellModelPhysical only supports the rfunc Hantush!")
+            raise NotImplementedError(
+                "WellModelPhysical only supports the rfunc Hantush!"
+            )
         up = self.rfunc.up
         gain_scale_factor = self.rfunc.gain_scale_factor
         rfunc.update_rfunc_settings(up=up, gain_scale_factor=gain_scale_factor)
@@ -94,4 +96,6 @@ class WellModelPhysical(WellModel):
         self, model: Model, istress: int | None = None, r: ArrayLike | None = None
     ) -> float:
         # not implemented for WellModelPhysical
-        raise NotImplementedError("Variance of gain is not implemented for WellModelPhysical!")
+        raise NotImplementedError(
+            "Variance of gain is not implemented for WellModelPhysical!"
+        )
