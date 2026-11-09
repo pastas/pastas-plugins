@@ -54,6 +54,12 @@ Response functions
 :doc:`From aquifer parameters for response functions <responses_parameters>`
 
 
+StressModel alternatives
+-----------------------
+
+:doc:`Adding Multiple Wells with Physical Hantush Parameters <multiple_wells>`
+
+
 Modflow StressModel
 -------------------
 
